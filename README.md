@@ -4,6 +4,12 @@ The full CodePulse ERP web app, set up as a normal Vite + React project you
 can open in VSCode and run on your own machine — instead of living only
 inside Claude's artifact preview.
 
+**This version's data lives in Firebase Firestore** — real-time, shared
+across whoever has it deployed, not per-browser-session state. It's also a
+real installable PWA. See `DEPLOY.md` for the full Firebase + GitHub +
+Vercel setup — **read the security note in there before putting in real
+data**, it matters.
+
 ## Why this matters
 
 A few things that were broken *specifically because* this ran inside
@@ -15,6 +21,7 @@ restricts.
 ## Setup
 
 ```bash
+cp .env.example .env.local   # fill in your Firebase project's config first
 npm install
 npm run dev
 ```
