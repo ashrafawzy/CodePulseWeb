@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ⚠️ TEST-MODE RULES — anyone with your Firebase project's public config
+    // (which ships inside every deployed build, by design — it's not a
+    // secret) can read and write every collection here. This is fine for
+    // getting the app running and testing it yourself. It is NOT fine for
+    // real business data or real users.
+    //
+    // WHY: the app's "pick a demo user" login is cosmetic — a piece of
+    // React state, not real authentication. Firestore Security Rules can
+    // only restrict access based on who Firebase itself says is signed in
+    // (request.auth), and right now nothing signs anyone into Firebase.
+    // Someone could open browser dev tools, import the Firebase SDK
+    // directly, and read or write anything — completely bypassing the
+    // app's role checks (isAdmin, canEdit, etc.), which only exist in the
+    // UI layer.
+    //
+    // TO MAKE THIS ACTUALLY SECURE:
+    // 1. Wire up real Firebase Authentication (email/password or similar)
+    //    in place of the demo user picker in Login.
+    // 2. Store each user's role as a custom claim (needs a small Cloud
+    //    Function, since custom claims can only be set server-side) or in
+    //    a Firestore "users" document keyed by their real auth uid.
+    // 3. Replace the rule below with real checks, e.g.:
+    //      allow write: if request.auth != null &&
+    //        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin';
+    //
+    // I did not build that in this pass — it's a real, separate piece of
+    // work (Cloud Functions + rewriting the login flow), not something to
+    // paper over with a comment. Ask if you want it built next.
+
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
