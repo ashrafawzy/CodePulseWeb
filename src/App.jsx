@@ -1393,7 +1393,7 @@ function AddForm({ fields, onSubmit, submitLabel = "+ Add", initialValues }) {
       }
       return [f.key, { amount: f.default ?? 0, currency: globalCurrency }];
     }
-    return [f.key, existing ?? f.default ?? (f.type === "number" ? 0 : (f.options ? (f.options[0].value ?? f.options[0]) : ""))];
+    return [f.key, existing ?? f.default ?? (f.type === "number" ? 0 : (f.options ? (f.options[0]?.value ?? f.options[0] ?? "") : ""))];
   }));
   const [vals, setVals] = useState(initial);
   const set = (k, v) => setVals((old) => ({ ...old, [k]: v }));
