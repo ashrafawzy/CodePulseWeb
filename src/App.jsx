@@ -1631,7 +1631,7 @@ export default function App() {
   function payPurchaseInvoice(id) { purchaseInvoicesCol.update(id, { status: "Paid" }); }
 
   /* ---- Actions: Manufacturing ---- */
-  function canRunBatch(product, qty) { return product.bom.every((b) => matById[b.id].stock >= b.qty * qty); }
+  function canRunBatch(product, qty) { return product.bom.every((b) => matById[b.id]?.stock >= b.qty * qty); }
   function completeBatch(id) {
     const batch = productionOrders.find((p) => p.id === id);
     const product = prodById[batch.product];
@@ -1661,7 +1661,7 @@ export default function App() {
   }
   function addStockCount(vals) {
     const isMaterial = vals.itemId.startsWith("RM");
-    const systemQty = isMaterial ? (vals.warehouse === "BR-HQ" ? matById[vals.itemId].stock : 0) : prodById[vals.itemId].stockByBranch[vals.warehouse];
+    const systemQty = isMaterial ? (vals.warehouse === "BR-HQ" ? matById[vals.itemId]?.stock : 0) : prodById[vals.itemId]?.stockByBranch[vals.warehouse];
     stockCountsCol.add({ warehouse: vals.warehouse, item: vals.itemId, systemQty, countedQty: vals.countedQty, date: todayStr(), status: "Completed" }, uid("SC"));
   }
 
@@ -2099,7 +2099,7 @@ function CustomersPage() {
         renderRow={(c) => {
           const orders = salesOrders.filter((o) => o.client === c.id);
           const value = orders.reduce((s, o) => s + orderTotal(o), 0);
-          return (<><Td mono>{c.id}</Td><Td>{c.name}</Td><Td>{c.location}</Td><Td>{branchById[c.branch].name}</Td><Td>{c.contact}</Td><Td mono>{orders.length}</Td><Td mono>{money(value)}</Td>
+          return (<><Td mono>{c.id}</Td><Td>{c.name}</Td><Td>{c.location}</Td><Td>{branchById[c.branch]?.name}</Td><Td>{c.contact}</Td><Td mono>{orders.length}</Td><Td mono>{money(value)}</Td>
             <Td>{isAdmin && <Button variant="ghost" onClick={() => setEditingId(c.id)}>Edit</Button>}</Td></>);
         }} />
     </div>
@@ -2132,8 +2132,8 @@ function QuotationsPage() {
       <Table title="Quotations" columns={["Quote", "Client", "Date", "Items", "Status", ""]} rows={quotations}
         renderRow={(q) => (
           <>
-            <Td mono>{q.id}</Td><Td>{clientById[q.client].name}</Td><Td mono>{q.date}</Td>
-            <Td><div className="text-xs space-y-0.5">{q.items.map((it, i) => <div key={i}>{it.qty} × {prodById[it.id].name}</div>)}</div></Td>
+            <Td mono>{q.id}</Td><Td>{clientById[q.client]?.name}</Td><Td mono>{q.date}</Td>
+            <Td><div className="text-xs space-y-0.5">{q.items.map((it, i) => <div key={i}>{it.qty} × {prodById[it.id]?.name}</div>)}</div></Td>
             <Td><Pill>{q.status}</Pill></Td>
             <Td>
               {canEdit && NEXT[q.status] && <Button onClick={() => advanceQuotation(q.id)}>{NEXT[q.status]}</Button>}
@@ -2152,8 +2152,8 @@ function SalesOrdersPage() {
       <Table title="Sales Orders" columns={["Order", "Client", "Date", "Items", "Total", "Status"]} rows={salesOrders}
         renderRow={(o) => (
           <>
-            <Td mono>{o.id}</Td><Td>{clientById[o.client].name}</Td><Td mono>{o.date}</Td>
-            <Td><div className="text-xs space-y-0.5">{o.items.map((it, i) => <div key={i}>{it.qty} × {prodById[it.id].name}</div>)}</div></Td>
+            <Td mono>{o.id}</Td><Td>{clientById[o.client]?.name}</Td><Td mono>{o.date}</Td>
+            <Td><div className="text-xs space-y-0.5">{o.items.map((it, i) => <div key={i}>{it.qty} × {prodById[it.id]?.name}</div>)}</div></Td>
             <Td mono>{money(orderTotal(o))}</Td><Td><Pill>{o.status}</Pill></Td>
           </>
         )} />
@@ -2168,8 +2168,8 @@ function DeliveryPage() {
       <Table title="Delivery" columns={["Order", "Client", "Branch", "Items", "Status", ""]} rows={salesOrders}
         renderRow={(o) => (
           <>
-            <Td mono>{o.id}</Td><Td>{clientById[o.client].name}</Td><Td>{branchById[o.branch].name}</Td>
-            <Td><div className="text-xs space-y-0.5">{o.items.map((it, i) => <div key={i}>{it.qty} × {prodById[it.id].name}</div>)}</div></Td>
+            <Td mono>{o.id}</Td><Td>{clientById[o.client]?.name}</Td><Td>{branchById[o.branch]?.name}</Td>
+            <Td><div className="text-xs space-y-0.5">{o.items.map((it, i) => <div key={i}>{it.qty} × {prodById[it.id]?.name}</div>)}</div></Td>
             <Td><Pill>{o.status}</Pill></Td>
             <Td>{canEdit && o.status === "Pending" && <Button onClick={() => advanceSalesOrder(o.id)}>Mark Delivered</Button>}</Td>
           </>
@@ -2187,7 +2187,7 @@ function SalesInvoicesPage() {
       <Table title="Invoices" columns={["Invoice", "Client", "Date", "Amount", "Status", ""]} rows={relevant}
         renderRow={(o) => (
           <>
-            <Td mono>{o.id.replace("SO", "INV")}</Td><Td>{clientById[o.client].name}</Td><Td mono>{o.date}</Td>
+            <Td mono>{o.id.replace("SO", "INV")}</Td><Td>{clientById[o.client]?.name}</Td><Td mono>{o.date}</Td>
             <Td mono>{money(orderTotal(o))}</Td><Td><Pill>{o.status}</Pill></Td>
             <Td>{canEdit && NEXT[o.status] && <Button onClick={() => advanceSalesOrder(o.id)}>{NEXT[o.status]}</Button>}</Td>
           </>
@@ -2257,7 +2257,7 @@ function PurchaseRequestsPage() {
       <Table title="Purchase Requests" columns={["PR", "Material", "Qty", "Requested By", "Department", "Date", "Status", ""]} rows={purchaseRequests}
         renderRow={(p) => (
           <>
-            <Td mono>{p.id}</Td><Td>{matById[p.item].name}</Td><Td mono>{p.qty} {matById[p.item].unit}</Td><Td>{p.requestedBy}</Td><Td>{p.department}</Td><Td mono>{p.date}</Td>
+            <Td mono>{p.id}</Td><Td>{matById[p.item]?.name}</Td><Td mono>{p.qty} {matById[p.item]?.unit}</Td><Td>{p.requestedBy}</Td><Td>{p.department}</Td><Td mono>{p.date}</Td>
             <Td><Pill>{p.status}</Pill></Td>
             <Td>
               {canEdit && p.status === "Pending" && <><Button onClick={() => approvePR(p.id, "Approved")}>Approve</Button><Button variant="danger" onClick={() => approvePR(p.id, "Rejected")}>Reject</Button></>}
@@ -2289,14 +2289,14 @@ function PurchaseOrdersPage() {
             </select></div>
           <div><div className="text-[11px] uppercase tracking-wide mb-1" style={{ color: "var(--text-label)" }}>Qty</div>
             <input type="number" value={qty} onChange={(e) => setQty(+e.target.value)} className="text-sm px-2 py-1.5 rounded-sm w-24" style={{ border: "1px solid var(--border-strong)" }} /></div>
-          <Button variant="accent" onClick={() => newPO(supplierId, [{ id: materialId, qty, cost: matById[materialId].cost }])}>+ Create PO</Button>
+          <Button variant="accent" onClick={() => newPO(supplierId, [{ id: materialId, qty, cost: matById[materialId]?.cost }])}>+ Create PO</Button>
         </div>
       )}
       <Table title="Purchase Orders" columns={["PO", "Supplier", "Date", "Items", "Total", "Status", ""]} rows={purchaseOrders}
         renderRow={(po) => (
           <>
-            <Td mono>{po.id}</Td><Td>{supById[po.supplier].name}</Td><Td mono>{po.date}</Td>
-            <Td><div className="text-xs space-y-0.5">{po.items.map((it, i) => <div key={i}>{it.qty} {matById[it.id].unit} · {matById[it.id].name}</div>)}</div></Td>
+            <Td mono>{po.id}</Td><Td>{supById[po.supplier]?.name}</Td><Td mono>{po.date}</Td>
+            <Td><div className="text-xs space-y-0.5">{po.items.map((it, i) => <div key={i}>{it.qty} {matById[it.id]?.unit} · {matById[it.id]?.name}</div>)}</div></Td>
             <Td mono>{money(poTotal(po))}</Td><Td><Pill>{po.status}</Pill></Td>
             <Td>{canEdit && po.status === "Pending" && <Button onClick={() => receivePO(po.id)}>Receive</Button>}</Td>
           </>
@@ -2313,8 +2313,8 @@ function ReceiptsPage() {
       <Table title="Receipts" columns={["Receipt", "PO", "Supplier", "Date", "Items"]} rows={received}
         renderRow={(po) => (
           <>
-            <Td mono>{po.id.replace("PO", "GRN")}</Td><Td mono>{po.id}</Td><Td>{supById[po.supplier].name}</Td><Td mono>{po.date}</Td>
-            <Td><div className="text-xs space-y-0.5">{po.items.map((it, i) => <div key={i}>{it.qty} {matById[it.id].unit} · {matById[it.id].name}</div>)}</div></Td>
+            <Td mono>{po.id.replace("PO", "GRN")}</Td><Td mono>{po.id}</Td><Td>{supById[po.supplier]?.name}</Td><Td mono>{po.date}</Td>
+            <Td><div className="text-xs space-y-0.5">{po.items.map((it, i) => <div key={i}>{it.qty} {matById[it.id]?.unit} · {matById[it.id]?.name}</div>)}</div></Td>
           </>
         )} />
       {received.length === 0 && <div className="text-sm mt-4" style={{ color: "var(--text-secondary)" }}>No goods received yet.</div>}
@@ -2329,7 +2329,7 @@ function PurchaseInvoicesPage() {
       <Table title="Invoices" columns={["Invoice", "PO", "Supplier", "Amount", "Date", "Status", ""]} rows={purchaseInvoices}
         renderRow={(pi) => (
           <>
-            <Td mono>{pi.id}</Td><Td mono>{pi.po}</Td><Td>{supById[pi.supplier].name}</Td><Td mono>{money(pi.amount)}</Td><Td mono>{pi.date}</Td>
+            <Td mono>{pi.id}</Td><Td mono>{pi.po}</Td><Td>{supById[pi.supplier]?.name}</Td><Td mono>{money(pi.amount)}</Td><Td mono>{pi.date}</Td>
             <Td><Pill>{pi.status}</Pill></Td>
             <Td>{canEdit && pi.status === "Unpaid" && <Button onClick={() => payPurchaseInvoice(pi.id)}>Mark Paid</Button>}</Td>
           </>
@@ -2391,7 +2391,7 @@ function StockMovePage({ type }) {
         renderRow={(m) => {
           const name = m.itemType === "Material" ? matById[m.item]?.name : prodById[m.item]?.name;
           const unit = m.itemType === "Material" ? matById[m.item]?.unit : prodById[m.item]?.unit;
-          return (<><Td mono>{m.id}</Td><Td>{name}</Td><Td>{m.itemType}</Td><Td mono>{m.qty} {unit}</Td><Td>{branchById[m.warehouse].name}</Td><Td mono>{m.date}</Td><Td mono>{m.ref}</Td></>);
+          return (<><Td mono>{m.id}</Td><Td>{name}</Td><Td>{m.itemType}</Td><Td mono>{m.qty} {unit}</Td><Td>{branchById[m.warehouse]?.name}</Td><Td mono>{m.date}</Td><Td mono>{m.ref}</Td></>);
         }} />
     </div>
   );
@@ -2427,7 +2427,7 @@ function TransfersPage() {
       <Table title="Transfers" columns={["Transfer", "Product", "From", "To", "Qty", "Date"]} rows={transfers}
         renderRow={(t) => {
           const p = products.find((x) => x.id === t.product);
-          return (<><Td mono>{t.id}</Td><Td>{p?.name}</Td><Td>{branchById[t.from].name}</Td><Td>{branchById[t.to].name}</Td><Td mono>{t.qty}</Td><Td mono>{t.date}</Td></>);
+          return (<><Td mono>{t.id}</Td><Td>{p?.name}</Td><Td>{branchById[t.from]?.name}</Td><Td>{branchById[t.to]?.name}</Td><Td mono>{t.qty}</Td><Td mono>{t.date}</Td></>);
         }} />
     </div>
   );
@@ -2447,7 +2447,7 @@ function StockCountPage() {
           const variance = sc.countedQty - sc.systemQty;
           return (
             <>
-              <Td mono>{sc.id}</Td><Td>{branchById[sc.warehouse].name}</Td><Td>{name}</Td><Td mono>{sc.systemQty}</Td><Td mono>{sc.countedQty}</Td>
+              <Td mono>{sc.id}</Td><Td>{branchById[sc.warehouse]?.name}</Td><Td>{name}</Td><Td mono>{sc.systemQty}</Td><Td mono>{sc.countedQty}</Td>
               <Td mono><span style={{ color: variance === 0 ? undefined : variance < 0 ? "#A64B3A" : "#3F7D5C" }}>{variance > 0 ? "+" : ""}{variance}</span></Td>
               <Td mono>{sc.date}</Td><Td><Pill>{sc.status}</Pill></Td>
             </>
@@ -2492,8 +2492,8 @@ function ItemLimitsPage() {
   const itemOptions = [...materials.map((m) => ({ value: m.id, label: m.name })), ...products.map((p) => ({ value: p.id, label: p.name }))];
   const [editingId, setEditingId] = useState(null);
   function currentStock(itemId, warehouse) {
-    if (itemId.startsWith("RM")) return warehouse === "BR-HQ" ? matById[itemId].stock : 0;
-    return prodById[itemId].stockByBranch[warehouse];
+    if (itemId.startsWith("RM")) return warehouse === "BR-HQ" ? matById[itemId]?.stock : 0;
+    return prodById[itemId]?.stockByBranch[warehouse];
   }
   const fields = [{ key: "item", label: "Item", type: "select", options: itemOptions }, { key: "warehouse", label: "Warehouse", type: "select", options: BRANCHES.map((b) => ({ value: b.id, label: b.name })) }, { key: "min", label: "Min", type: "number", default: 50 }, { key: "max", label: "Max", type: "number", default: 500 }];
   const editingRow = itemLimits.find((l) => l.id === editingId);
@@ -2509,7 +2509,7 @@ function ItemLimitsPage() {
           const name = l.item.startsWith("RM") ? matById[l.item]?.name : prodById[l.item]?.name;
           const stock = currentStock(l.item, l.warehouse);
           const status = stock < l.min ? "Below Min" : stock > l.max ? "Above Max" : "Within Range";
-          return (<><Td mono>{l.id}</Td><Td>{name}</Td><Td>{branchById[l.warehouse].name}</Td><Td mono>{stock}</Td><Td mono>{l.min}</Td><Td mono>{l.max}</Td><Td><Pill>{status}</Pill></Td>
+          return (<><Td mono>{l.id}</Td><Td>{name}</Td><Td>{branchById[l.warehouse]?.name}</Td><Td mono>{stock}</Td><Td mono>{l.min}</Td><Td mono>{l.max}</Td><Td><Pill>{status}</Pill></Td>
             <Td>{isAdmin && <Button variant="ghost" onClick={() => setEditingId(l.id)}>Edit</Button>}{canEdit && <Button variant="danger" onClick={() => deleteItemLimit(l.id)}>Delete</Button>}</Td></>);
         }} />
       {itemLimits.length === 0 && <div className="text-sm mt-3" style={{ color: "var(--text-secondary)" }}>No limits set yet.</div>}
@@ -2552,8 +2552,8 @@ function JournalPage() {
 function CashPage() {
   const { salesOrders, purchaseInvoices, expenses, clientById, supById, orderTotal, money } = useApp();
   const entries = [
-    ...salesOrders.filter((o) => o.status === "Paid").map((o) => ({ date: o.date, desc: `Receipt — ${clientById[o.client].name} (${o.id})`, inflow: orderTotal(o), outflow: 0 })),
-    ...purchaseInvoices.filter((p) => p.status === "Paid").map((p) => ({ date: p.date, desc: `Payment — ${supById[p.supplier].name} (${p.po})`, inflow: 0, outflow: p.amount })),
+    ...salesOrders.filter((o) => o.status === "Paid").map((o) => ({ date: o.date, desc: `Receipt — ${clientById[o.client]?.name} (${o.id})`, inflow: orderTotal(o), outflow: 0 })),
+    ...purchaseInvoices.filter((p) => p.status === "Paid").map((p) => ({ date: p.date, desc: `Payment — ${supById[p.supplier]?.name} (${p.po})`, inflow: 0, outflow: p.amount })),
     ...expenses.filter((e) => e.status === "Paid").map((e) => ({ date: e.date, desc: `Expense — ${e.category} (${e.employee})`, inflow: 0, outflow: e.amount })),
   ].sort((a, b) => a.date.localeCompare(b.date));
   let bal = 15000;
@@ -2590,7 +2590,7 @@ function ArReceiptsPage() {
   const { salesOrders, clientById, orderTotal, money, customers, manualReceipts, addManualReceipt, updateManualReceipt, deleteManualReceipt, canEdit, isAdmin } = useApp();
   const [editingId, setEditingId] = useState(null);
   const fromOrders = salesOrders.filter((o) => o.status === "Paid").map((o) => ({
-    id: o.id.replace("SO", "RCP"), party: clientById[o.client].name, date: o.date, amount: orderTotal(o), source: "Sales Order",
+    id: o.id.replace("SO", "RCP"), party: clientById[o.client]?.name, date: o.date, amount: orderTotal(o), source: "Sales Order",
   }));
   const manual = manualReceipts.map((r) => ({ id: r.id, party: clientById[r.client]?.name || r.client, date: r.date, amount: r.amount, source: "Manual" }));
   const rows = [...fromOrders, ...manual];
@@ -2616,7 +2616,7 @@ function ApPaymentsPage() {
   const { purchaseInvoices, expenses, supById, money, suppliers, manualPayments, addManualPayment, updateManualPayment, deleteManualPayment, canEdit, isAdmin } = useApp();
   const [editingId, setEditingId] = useState(null);
   const rows = [
-    ...purchaseInvoices.filter((p) => p.status === "Paid").map((p) => ({ id: p.id, payee: supById[p.supplier].name, date: p.date, amount: p.amount, type: "Supplier" })),
+    ...purchaseInvoices.filter((p) => p.status === "Paid").map((p) => ({ id: p.id, payee: supById[p.supplier]?.name, date: p.date, amount: p.amount, type: "Supplier" })),
     ...expenses.filter((e) => e.status === "Paid").map((e) => ({ id: e.id, payee: e.employee, date: e.date, amount: e.amount, type: "Expense" })),
     ...manualPayments.map((p) => ({ id: p.id, payee: p.payee, date: p.date, amount: p.amount, type: "Manual" })),
   ];
@@ -2726,7 +2726,7 @@ function EmployeesPage() {
           onSubmit={(vals) => { updateEmployee(editingId, vals); setEditingId(null); }} submitLabel="Save Changes" />
       )}
       <Table title="Employees" columns={["ID", "Name", "Role", "Department", "Branch", "Email", "Hired", "Status", ""]} rows={employees}
-        renderRow={(e) => (<><Td mono>{e.id}</Td><Td>{e.name}</Td><Td>{e.role}</Td><Td>{e.department}</Td><Td>{branchById[e.branch].name}</Td><Td>{e.email}</Td><Td mono>{e.hired}</Td><Td><Pill>{e.status}</Pill></Td>
+        renderRow={(e) => (<><Td mono>{e.id}</Td><Td>{e.name}</Td><Td>{e.role}</Td><Td>{e.department}</Td><Td>{branchById[e.branch]?.name}</Td><Td>{e.email}</Td><Td mono>{e.hired}</Td><Td><Pill>{e.status}</Pill></Td>
           <Td>{isAdmin && <Button variant="ghost" onClick={() => setEditingId(e.id)}>Edit</Button>}</Td></>)} />
     </div>
   );
@@ -2885,7 +2885,7 @@ function ManufacturingPage() {
               <Td mono>{b.id}</Td><Td>{product.name}</Td><Td mono>{b.qty} {product.unit}</Td><Td mono>{b.date}</Td>
               <Td><Pill>{b.status}</Pill></Td>
               <Td><div className="text-xs space-y-0.5">{product.bom.map((line) => (
-                <div key={line.id} style={{ color: matById[line.id].stock >= line.qty * b.qty ? "var(--text-secondary)" : "#A64B3A" }}>{matById[line.id].name}: {(line.qty * b.qty).toFixed(1)} {matById[line.id].unit}</div>
+                <div key={line.id} style={{ color: matById[line.id]?.stock >= line.qty * b.qty ? "var(--text-secondary)" : "#A64B3A" }}>{matById[line.id]?.name}: {(line.qty * b.qty).toFixed(1)} {matById[line.id]?.unit}</div>
               ))}</div></Td>
               <Td>{canEdit && b.status === "Planned" && <Button onClick={() => completeBatch(b.id)} disabled={!ok}>{ok ? "Complete" : "Short stock"}</Button>}</Td>
             </>
@@ -3097,7 +3097,7 @@ function ReportsPage() {
 function ApprovalsPage() {
   const { purchaseRequests, leaves, expenses, matById, approvePR, setLeaveStatus, setExpenseStatus, money, canEdit } = useApp();
   const items = [
-    ...purchaseRequests.filter((p) => p.status === "Pending").map((p) => ({ type: "Purchase Request", id: p.id, detail: `${p.qty} × ${matById[p.item].name}`, requester: p.requestedBy, date: p.date, approve: () => approvePR(p.id, "Approved"), reject: () => approvePR(p.id, "Rejected") })),
+    ...purchaseRequests.filter((p) => p.status === "Pending").map((p) => ({ type: "Purchase Request", id: p.id, detail: `${p.qty} × ${matById[p.item]?.name}`, requester: p.requestedBy, date: p.date, approve: () => approvePR(p.id, "Approved"), reject: () => approvePR(p.id, "Rejected") })),
     ...leaves.filter((l) => l.status === "Pending").map((l) => ({ type: "Leave Request", id: l.id, detail: `${l.type} leave, ${l.from} to ${l.to}`, requester: l.employee, date: l.from, approve: () => setLeaveStatus(l.id, "Approved"), reject: () => setLeaveStatus(l.id, "Rejected") })),
     ...expenses.filter((e) => e.status === "Pending").map((e) => ({ type: "Expense Claim", id: e.id, detail: `${e.category} — ${money(e.amount)}`, requester: e.employee, date: e.date, approve: () => setExpenseStatus(e.id, "Approved"), reject: () => setExpenseStatus(e.id, "Rejected") })),
   ];
