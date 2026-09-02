@@ -775,7 +775,7 @@ const MODULES = [
   { id: "hr", label: "HR", subs: [{ id: "employees", label: "Employees" }, { id: "attendance", label: "Attendance" }, { id: "leaves", label: "Leaves" }, { id: "payroll", label: "Payroll" }, { id: "recruitment", label: "Recruitment" }] },
   { id: "expenses", label: "Expenses" },
   { id: "fixedassets", label: "Fixed Assets" },
-  { id: "manufacturing", label: "Manufacturing" },
+{ id: "manufacturing", label: "Manufacturing", subs: [{ id: "productionorders", label: "Production Orders" }, { id: "workcenters", label: "Work Centers" }, { id: "qualitycontrol", label: "Quality Control" }, { id: "maintenance", label: "Maintenance" }] },
   { id: "projects", label: "Projects" },
   { id: "service", label: "Service" },
   { id: "documents", label: "Documents" },
