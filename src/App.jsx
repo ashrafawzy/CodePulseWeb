@@ -1,21 +1,22 @@
 import React, { useState, useMemo, useContext, createContext, useRef } from "react";
 import * as XLSX from "xlsx";
+import { useFirestoreCollection } from "./useFirestoreCollection";
+import {
+  uid, todayStr, receivePurchaseOrder, completeProductionBatch, transferProductStock,
+  deliverSalesOrder, restockReturn, convertPurchaseRequestToOrder, convertQuotationToOrder,
+  addStoreItemTx, removeStoreItemTx,
+} from "./firestoreActions";
 
 /* ============================================================
    CODEPULSE — Enterprise Operations Console
    Full module tree: Dashboard, CRM, Sales, Purchasing, Inventory,
    Accounting, HR, Expenses, Fixed Assets, Manufacturing, Projects,
    Service, Documents, Reports, Approvals, Users & Permissions, Settings.
-   ============================================================ */
 
-const uid = (() => {
-  const n = {};
-  return (prefix) => {
-    n[prefix] = (n[prefix] || 1000) + 1;
-    return `${prefix}-${n[prefix].toString().padStart(4, "0")}`;
-  };
-})();
-const todayStr = () => "2026-08-17";
+   Data layer: Firebase Firestore (see useFirestoreCollection.js and
+   firestoreActions.js) — every collection is real-time and shared across
+   whoever has this deployed, not per-browser-session state anymore.
+   ============================================================ */
 
 /* ---------------- Themes ----------------
    A small set of design tokens exposed as CSS custom properties on the root
@@ -71,7 +72,6 @@ function formatMoney(amountUSD, code, rates) {
 /* ---------------- Translations ---------------- */
 const LANGUAGES = [
   { code: "en", label: "English" },
-  { code: "es", label: "Español" },
   { code: "ar", label: "العربية" },
 ];
 const I18N = {
@@ -127,6 +127,36 @@ const I18N = {
   "Expenses": "Gastos",
   "Fixed Assets": "Activos Fijos",
   "Manufacturing": "Manufactura",
+  "Production Orders": "Órdenes de Producción",
+  "Work Centers": "Centros de Trabajo",
+  "Quality Control": "Control de Calidad",
+  "Maintenance": "Mantenimiento",
+  "Work Center": "Centro de Trabajo",
+  "Capacity / Day": "Capacidad / Día",
+  "Devices": "Dispositivos",
+  "Idle": "Inactivo",
+  "+ Add Work Center": "+ Agregar Centro de Trabajo",
+  "Inspections Logged": "Inspecciones Registradas",
+  "Pass Rate": "Tasa de Aprobación",
+  "Pending Review": "Pendiente de Revisión",
+  "Inspector": "Inspector",
+  "Result": "Resultado",
+  "Notes": "Notas",
+  "Pass": "Aprobado",
+  "Fail": "Rechazado",
+  "+ Log Inspection": "+ Registrar Inspección",
+  "Equipment": "Equipo",
+  "Last Service": "Último Servicio",
+  "Next Due": "Próximo Vencimiento",
+  "Technician": "Técnico",
+  "Equipment Tracked": "Equipos Monitoreados",
+  "Due Soon": "Próximo a Vencer",
+  "Overdue": "Vencido",
+  "Up to Date": "Al Día",
+  "Needs attention": "Requiere Atención",
+  "All clear": "Todo en Orden",
+  "+ Add Equipment": "+ Agregar Equipo",
+  "Log Service": "Registrar Servicio",
   "Projects": "Proyectos",
   "Project": "Proyecto",
   "Service": "Servicio",
@@ -313,6 +343,25 @@ const I18N = {
   "In Progress": "En Progreso",
   "Resolved": "Resuelto",
   "Active": "Activo",
+  "Inactive": "Inactivo",
+  "Taxes": "Impuestos",
+  "Tax Name": "Nombre del Impuesto",
+  "Rate %": "Tasa %",
+  "Applies To": "Aplica A",
+  "Sales Tax": "Impuesto sobre Ventas",
+  "VAT": "IVA",
+  "Duty": "Arancel",
+  "Withholding": "Retención",
+  "Activate": "Activar",
+  "Deactivate": "Desactivar",
+  "+ Add Tax Rate": "+ Agregar Tasa de Impuesto",
+  "Tax Rates Configured": "Tasas de Impuesto Configuradas",
+  "Active Rates": "Tasas Activas",
+  "Average Rate": "Tasa Promedio",
+  "Active Batches": "Lotes Activos",
+  "Units In Production": "Unidades en Producción",
+  "Completed Batches": "Lotes Completados",
+  "Batches At Risk": "Lotes en Riesgo",
   "Applied": "Aplicado",
   "Interview": "Entrevista",
   "Offer": "Oferta",
@@ -368,6 +417,8 @@ const I18N = {
   "Update Rate": "Actualizar Tasa",
   "Save Settings": "Guardar Configuración",
   "Delete": "Eliminar",
+  "Edit": "Editar",
+  "Save Changes": "Guardar Cambios",
   "+ Add Supplier": "+ Agregar Proveedor",
   "+ Add User": "+ Agregar Usuario",
   "+ Add Bank Account": "+ Agregar Cuenta Bancaria",
@@ -461,6 +512,36 @@ const I18N = {
   "Expenses": "المصروفات",
   "Fixed Assets": "الأصول الثابتة",
   "Manufacturing": "التصنيع",
+  "Production Orders": "أوامر الإنتاج",
+  "Work Centers": "مراكز العمل",
+  "Quality Control": "مراقبة الجودة",
+  "Maintenance": "الصيانة",
+  "Work Center": "مركز العمل",
+  "Capacity / Day": "الطاقة الإنتاجية / يوم",
+  "Devices": "الأجهزة",
+  "Idle": "خامل",
+  "+ Add Work Center": "+ إضافة مركز عمل",
+  "Inspections Logged": "الفحوصات المسجَّلة",
+  "Pass Rate": "نسبة النجاح",
+  "Pending Review": "قيد المراجعة",
+  "Inspector": "المفتش",
+  "Result": "النتيجة",
+  "Notes": "ملاحظات",
+  "Pass": "ناجح",
+  "Fail": "راسب",
+  "+ Log Inspection": "+ تسجيل فحص",
+  "Equipment": "المعدات",
+  "Last Service": "آخر صيانة",
+  "Next Due": "الموعد القادم",
+  "Technician": "الفني",
+  "Equipment Tracked": "المعدات المتابَعة",
+  "Due Soon": "يستحق قريبًا",
+  "Overdue": "متأخر",
+  "Up to Date": "محدَّث",
+  "Needs attention": "يحتاج انتباه",
+  "All clear": "كل شيء على ما يرام",
+  "+ Add Equipment": "+ إضافة معدة",
+  "Log Service": "تسجيل الصيانة",
   "Projects": "المشاريع",
   "Project": "مشروع",
   "Service": "الخدمة",
@@ -647,6 +728,25 @@ const I18N = {
   "In Progress": "قيد التنفيذ",
   "Resolved": "تم الحل",
   "Active": "نشط",
+  "Inactive": "غير نشط",
+  "Taxes": "الضرائب",
+  "Tax Name": "اسم الضريبة",
+  "Rate %": "النسبة %",
+  "Applies To": "تُطبَّق على",
+  "Sales Tax": "ضريبة المبيعات",
+  "VAT": "ضريبة القيمة المضافة",
+  "Duty": "رسوم جمركية",
+  "Withholding": "ضريبة الاستقطاع",
+  "Activate": "تفعيل",
+  "Deactivate": "إلغاء التفعيل",
+  "+ Add Tax Rate": "+ إضافة نسبة ضريبة",
+  "Tax Rates Configured": "نسب الضرائب المُعدَّة",
+  "Active Rates": "النسب النشطة",
+  "Average Rate": "متوسط النسبة",
+  "Active Batches": "الدفعات النشطة",
+  "Units In Production": "الوحدات قيد الإنتاج",
+  "Completed Batches": "الدفعات المكتملة",
+  "Batches At Risk": "الدفعات المعرَّضة للخطر",
   "Applied": "تم التقديم",
   "Interview": "مقابلة",
   "Offer": "عرض عمل",
@@ -702,6 +802,8 @@ const I18N = {
   "Update Rate": "تحديث السعر",
   "Save Settings": "حفظ الإعدادات",
   "Delete": "حذف",
+  "Edit": "تعديل",
+  "Save Changes": "حفظ التغييرات",
   "+ Add Supplier": "+ إضافة مورد",
   "+ Add User": "+ إضافة مستخدم",
   "+ Add Bank Account": "+ إضافة حساب بنكي",
@@ -756,7 +858,7 @@ const BRANCHES = [
 
 /* ---------------- Users & Roles ---------------- */
 const seedUsers = [
-  { id: "u1", name: "Sam Rivera", role: "Admin", username: "admin" },
+  { id: "u1", name: "CodePulse", role: "Admin", username: "admin" },
   { id: "u2", name: "Priya Nair", role: "Factory Manager", username: "factory" },
   { id: "u3", name: "Jordan Blake", role: "Sales Manager", username: "sales" },
   { id: "u4", name: "Casey Wu", role: "Accountant", username: "finance" },
@@ -771,11 +873,11 @@ const MODULES = [
   { id: "purchasing", label: "Purchasing", subs: [{ id: "suppliers", label: "Suppliers" }, { id: "purchaserequests", label: "Purchase Requests" }, { id: "purchaseorders", label: "Purchase Orders" }, { id: "receipts", label: "Receipts" }, { id: "purchaseinvoices", label: "Invoices" }] },
   { id: "inventory", label: "Inventory", subs: [{ id: "items", label: "Items" }, { id: "warehouses", label: "Warehouses" }, { id: "stockin", label: "Stock In" }, { id: "stockout", label: "Stock Out" }, { id: "transfers", label: "Transfers" }, { id: "stockcount", label: "Stock Count" }] },
   { id: "storemgmt", label: "Store Management", subs: [{ id: "additems", label: "Add Items" }, { id: "outitems", label: "Out Items" }, { id: "sm_transfers", label: "Transfer" }, { id: "itemlimits", label: "Item Limits" }] },
-  { id: "accounting", label: "Accounting", subs: [{ id: "coa", label: "Chart of Accounts" }, { id: "journal", label: "Journal Entries" }, { id: "cash", label: "Cash" }, { id: "banks", label: "Banks" }, { id: "arreceipts", label: "Receipts" }, { id: "appayments", label: "Payments" }, { id: "finreports", label: "Financial Reports" }] },
+  { id: "accounting", label: "Accounting", subs: [{ id: "coa", label: "Chart of Accounts" }, { id: "journal", label: "Journal Entries" }, { id: "cash", label: "Cash" }, { id: "banks", label: "Banks" }, { id: "arreceipts", label: "Receipts" }, { id: "appayments", label: "Payments" }, { id: "taxes", label: "Taxes" }, { id: "finreports", label: "Financial Reports" }] },
   { id: "hr", label: "HR", subs: [{ id: "employees", label: "Employees" }, { id: "attendance", label: "Attendance" }, { id: "leaves", label: "Leaves" }, { id: "payroll", label: "Payroll" }, { id: "recruitment", label: "Recruitment" }] },
   { id: "expenses", label: "Expenses" },
   { id: "fixedassets", label: "Fixed Assets" },
-{ id: "manufacturing", label: "Manufacturing", subs: [{ id: "productionorders", label: "Production Orders" }, { id: "workcenters", label: "Work Centers" }, { id: "qualitycontrol", label: "Quality Control" }, { id: "maintenance", label: "Maintenance" }] },
+  { id: "manufacturing", label: "Manufacturing", subs: [{ id: "productionorders", label: "Production Orders" }, { id: "workcenters", label: "Work Centers" }, { id: "qualitycontrol", label: "Quality Control" }, { id: "maintenance", label: "Maintenance" }] },
   { id: "projects", label: "Projects" },
   { id: "service", label: "Service" },
   { id: "documents", label: "Documents" },
@@ -812,6 +914,7 @@ const seedSuppliers = [
   { id: "SUP-001", name: "Millhaven Textiles", contact: "orders@millhaven.co", lead: 5 },
   { id: "SUP-002", name: "PureBase Chemical Supply", contact: "sales@purebase.com", lead: 3 },
   { id: "SUP-003", name: "PackRight Industries", contact: "hello@packright.com", lead: 4 },
+  { id: "SUP-004", name: "Guardian Electronics Ltd", contact: "sales@guardianelec.com", lead: 10 },
 ];
 
 const seedMaterials = [
@@ -823,6 +926,10 @@ const seedMaterials = [
   { id: "RM-006", name: "30ml Amenity Bottle", unit: "pc", stock: 3200, reorder: 1500, cost: 0.12, supplier: "SUP-003" },
   { id: "RM-007", name: "Kraft Retail Box (small)", unit: "pc", stock: 640, reorder: 800, cost: 0.35, supplier: "SUP-003" },
   { id: "RM-008", name: "Woven Label Tag", unit: "pc", stock: 5000, reorder: 2000, cost: 0.04, supplier: "SUP-003" },
+  { id: "RM-009", name: "Electronic Lock Mechanism", unit: "pc", stock: 150, reorder: 100, cost: 12.50, supplier: "SUP-004" },
+  { id: "RM-010", name: "Keypad Module", unit: "pc", stock: 200, reorder: 100, cost: 6.75, supplier: "SUP-004" },
+  { id: "RM-011", name: "Safe Steel Body", unit: "pc", stock: 80, reorder: 50, cost: 45.0, supplier: "SUP-004" },
+  { id: "RM-012", name: "Circuit Board Assembly", unit: "pc", stock: 120, reorder: 80, cost: 18.25, supplier: "SUP-004" },
 ];
 
 const seedProducts = [
@@ -836,6 +943,10 @@ const seedProducts = [
     stockByBranch: { "BR-HQ": 2600, "BR-DEN": 300, "BR-TPA": 200 }, bom: [{ id: "RM-003", qty: 0.04 }, { id: "RM-005", qty: 0.001 }, { id: "RM-007", qty: 0.2 }] },
   { id: "FG-005", name: "Guest Slippers (pair)", category: "Amenities", unit: "pair", price: 1.8, reorder: 300,
     stockByBranch: { "BR-HQ": 220, "BR-DEN": 40, "BR-TPA": 30 }, bom: [{ id: "RM-001", qty: 0.15 }, { id: "RM-007", qty: 1 }] },
+  { id: "FG-006", name: "Digital Door Lock", category: "Devices", unit: "pc", price: 89.0, reorder: 40,
+    stockByBranch: { "BR-HQ": 60, "BR-DEN": 8, "BR-TPA": 6 }, bom: [{ id: "RM-009", qty: 1 }, { id: "RM-010", qty: 1 }, { id: "RM-012", qty: 1 }] },
+  { id: "FG-007", name: "In-Room Safe", category: "Devices", unit: "pc", price: 129.0, reorder: 25,
+    stockByBranch: { "BR-HQ": 35, "BR-DEN": 5, "BR-TPA": 4 }, bom: [{ id: "RM-011", qty: 1 }, { id: "RM-012", qty: 1 }, { id: "RM-010", qty: 1 }] },
 ];
 
 const seedCustomers = [
@@ -893,6 +1004,25 @@ const seedProductionOrders = [
   { id: "PB-002", product: "FG-005", qty: 300, date: "2026-08-16", status: "Planned" },
 ];
 
+const seedWorkCenters = [
+  { id: "WC-001", name: "Injection Molding Line", department: "Devices", capacityPerDay: 200, status: "Running" },
+  { id: "WC-002", name: "Electronics Assembly", department: "Devices", capacityPerDay: 150, status: "Running" },
+  { id: "WC-003", name: "Textile Cutting & Sewing", department: "Linens", capacityPerDay: 500, status: "Running" },
+  { id: "WC-004", name: "Amenity Filling & Packaging", department: "Amenities", capacityPerDay: 3000, status: "Idle" },
+  { id: "WC-005", name: "Final Assembly & Testing", department: "Devices", capacityPerDay: 120, status: "Maintenance" },
+];
+
+const seedQualityChecks = [
+  { id: "QC-0001", batch: "PB-001", product: "FG-003", inspector: "Aiko Tanaka", date: "2026-08-09", result: "Pass", notes: "Fill accuracy within tolerance." },
+  { id: "QC-0002", batch: "PB-002", product: "FG-005", inspector: "Aiko Tanaka", date: "2026-08-16", result: "Pending", notes: "" },
+];
+
+const seedMaintenance = [
+  { id: "MT-0001", equipment: "Injection Molding Press #1", workCenter: "WC-001", lastService: "2026-06-01", nextDue: "2026-09-01", status: "Up to Date", technician: "Diego Alvarez" },
+  { id: "MT-0002", equipment: "Pick-and-Place Machine", workCenter: "WC-002", lastService: "2026-05-15", nextDue: "2026-08-15", status: "Due Soon", technician: "Diego Alvarez" },
+  { id: "MT-0003", equipment: "Final Test Rig", workCenter: "WC-005", lastService: "2026-04-01", nextDue: "2026-07-01", status: "Overdue", technician: "Priya Nair" },
+];
+
 const seedTransfers = [
   { id: "TR-001", product: "FG-004", from: "BR-HQ", to: "BR-TPA", qty: 200, date: "2026-08-13" },
 ];
@@ -915,6 +1045,12 @@ const seedItemLimits = [
   { id: "LIM-0002", item: "FG-001", warehouse: "BR-DEN", min: 15, max: 60 },
   { id: "LIM-0003", item: "FG-003", warehouse: "BR-HQ", min: 800, max: 3000 },
   { id: "LIM-0004", item: "RM-005", warehouse: "BR-HQ", min: 15, max: 50 },
+];
+
+const seedTaxRates = [
+  { id: "TAX-0001", name: "Standard Sales Tax", rate: 7.25, type: "Sales Tax", appliesTo: "Sales", isActive: true },
+  { id: "TAX-0002", name: "State VAT", rate: 5.0, type: "VAT", appliesTo: "Both", isActive: true },
+  { id: "TAX-0003", name: "Import Duty", rate: 3.5, type: "Duty", appliesTo: "Purchases", isActive: false },
 ];
 
 const seedCoA = [
@@ -1001,7 +1137,7 @@ const seedService = [
 ];
 
 const seedDocuments = [
-  { id: "DOC-0001", name: "Supplier Agreement - Millhaven Textiles.pdf", module: "Purchasing", type: "Contract", uploadedBy: "Sam Rivera", date: "2026-02-10" },
+  { id: "DOC-0001", name: "Supplier Agreement - Millhaven Textiles.pdf", module: "Purchasing", type: "Contract", uploadedBy: "CodePulse", date: "2026-02-10" },
   { id: "DOC-0002", name: "Q2 Financial Statement.xlsx", module: "Accounting", type: "Report", uploadedBy: "Casey Wu", date: "2026-07-05" },
   { id: "DOC-0003", name: "Fire Safety Certificate.pdf", module: "HR", type: "Compliance", uploadedBy: "Priya Nair", date: "2026-01-20" },
   { id: "DOC-0004", name: "Grand Meridian Hotel MSA.pdf", module: "Sales", type: "Contract", uploadedBy: "Jordan Blake", date: "2025-11-01" },
@@ -1021,6 +1157,8 @@ const STATUS_COLOR = {
   "Raw Material": "#3A5C86", "Finished Good": "#3F7D5C", Supplier: "#3A5C86", Expense: "#8A6A2E",
   "Purchase Request": "#8A6A2E", "Leave Request": "#3A5C86", "Expense Claim": "#6B4FA0",
   "Below Min": "#A64B3A", "Within Range": "#3F7D5C", "Above Max": "#6B4FA0",
+  Running: "#3F7D5C", Idle: "#8A6A2E", Maintenance: "#A64B3A", Fail: "#A64B3A", Pass: "#3F7D5C",
+  "Up to Date": "#3F7D5C", "Due Soon": "#8A6A2E", Overdue: "#A64B3A",
   "Sales Order": "#3A5C86", "Manual": "#8A6A2E",
 };
 
@@ -1244,11 +1382,18 @@ function SectionHeader({ title, sub }) {
 /* Generic inline add-form driven by a field config array.
    Fields of type "money" render an amount input plus a currency picker;
    the entered amount is converted to USD (the system's storage currency) on submit. */
-function AddForm({ fields, onSubmit, submitLabel = "+ Add" }) {
+function AddForm({ fields, onSubmit, submitLabel = "+ Add", initialValues }) {
   const { currencies, currency: globalCurrency, toUSD, t } = useApp();
   const initial = Object.fromEntries(fields.map((f) => {
-    if (f.type === "money") return [f.key, { amount: f.default ?? 0, currency: globalCurrency }];
-    return [f.key, f.default ?? (f.type === "number" ? 0 : (f.options ? (f.options[0].value ?? f.options[0]) : ""))];
+    const existing = initialValues?.[f.key];
+    if (f.type === "money") {
+      if (existing != null) {
+        const rate = currencies.find((c) => c.code === globalCurrency)?.rate ?? 1;
+        return [f.key, { amount: +(existing * rate).toFixed(2), currency: globalCurrency }];
+      }
+      return [f.key, { amount: f.default ?? 0, currency: globalCurrency }];
+    }
+    return [f.key, existing ?? f.default ?? (f.type === "number" ? 0 : (f.options ? (f.options[0].value ?? f.options[0]) : ""))];
   }));
   const [vals, setVals] = useState(initial);
   const set = (k, v) => setVals((old) => ({ ...old, [k]: v }));
@@ -1290,12 +1435,33 @@ function AddForm({ fields, onSubmit, submitLabel = "+ Add" }) {
   );
 }
 
-function ListPage({ title, sub, addFields, onAdd, canEdit, columns, rows, renderRow, emptyText }) {
+function ListPage({ title, sub, addFields, onAdd, onUpdate, onDelete, canEdit, columns, rows, renderRow, emptyText, idKey = "id" }) {
+  const { isAdmin } = useApp();
+  const [editingId, setEditingId] = useState(null);
+  const editingRow = rows.find((r) => r[idKey] === editingId);
+  const hasActions = !!(onUpdate || onDelete);
+  const finalColumns = hasActions ? [...columns, ""] : columns;
+  function finalRenderRow(r) {
+    return (
+      <>
+        {renderRow(r)}
+        {hasActions && (
+          <Td>
+            {isAdmin && onUpdate && <Button variant="ghost" onClick={() => setEditingId(r[idKey])}>Edit</Button>}
+            {canEdit !== false && onDelete && <Button variant="danger" onClick={() => onDelete(r[idKey])}>Delete</Button>}
+          </Td>
+        )}
+      </>
+    );
+  }
   return (
     <div>
       <SectionHeader title={title} sub={sub} />
-      {canEdit !== false && addFields && <AddForm fields={addFields} onSubmit={onAdd} />}
-      <Table title={title} columns={columns} rows={rows} renderRow={renderRow} />
+      {editingRow ? (
+        <AddForm key={editingId} fields={addFields} initialValues={editingRow}
+          onSubmit={(vals) => { onUpdate(editingId, vals); setEditingId(null); }} submitLabel="Save Changes" />
+      ) : (canEdit !== false && addFields && <AddForm fields={addFields} onSubmit={onAdd} />)}
+      <Table title={title} columns={finalColumns} rows={rows} renderRow={finalRenderRow} />
       {rows.length === 0 && emptyText && <div className="text-sm mt-3" style={{ color: "var(--text-secondary)" }}>{emptyText}</div>}
     </div>
   );
@@ -1355,46 +1521,75 @@ function Login({ onLogin, lang, setLang, t, users }) {
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [users, setUsers] = useState(seedUsers);
   const [selectedModule, setSelectedModule] = useState("dashboard");
   const [selectedSub, setSelectedSub] = useState(null);
   const [currency, setCurrency] = useState("USD");
   const [lang, setLang] = useState("en");
   const [theme, setTheme] = useState("light");
 
-  const [materials, setMaterials] = useState(seedMaterials);
-  const [products, setProducts] = useState(seedProducts);
-  const [customers] = useState(seedCustomers);
-  const [suppliers, setSuppliers] = useState(seedSuppliers);
-  const [leads, setLeads] = useState(seedLeads);
-  const [opportunities, setOpportunities] = useState(seedOpportunities);
-  const [quotations, setQuotations] = useState(seedQuotations);
-  const [salesOrders, setSalesOrders] = useState(seedSalesOrders);
-  const [returns, setReturns] = useState(seedReturns);
-  const [purchaseRequests, setPurchaseRequests] = useState(seedPurchaseRequests);
-  const [purchaseOrders, setPurchaseOrders] = useState(seedPurchaseOrders);
-  const [purchaseInvoices, setPurchaseInvoices] = useState(seedPurchaseInvoices);
-  const [productionOrders, setProductionOrders] = useState(seedProductionOrders);
-  const [transfers, setTransfers] = useState(seedTransfers);
-  const [movements, setMovements] = useState(seedMovements);
-  const [stockCounts, setStockCounts] = useState(seedStockCounts);
-  const [itemLimits, setItemLimits] = useState(seedItemLimits);
-  const [currencies, setCurrencies] = useState(seedCurrencies);
-  const [coa, setCoa] = useState(seedCoA);
-  const [journal, setJournal] = useState(seedJournal);
-  const [banks, setBanks] = useState(seedBanks);
-  const [employees] = useState(seedEmployees);
-  const [attendance, setAttendance] = useState(seedAttendance);
-  const [leaves, setLeaves] = useState(seedLeaves);
-  const [payroll, setPayroll] = useState(seedPayroll);
-  const [recruitment, setRecruitment] = useState(seedRecruitment);
-  const [expenses, setExpenses] = useState(seedExpenses);
-  const [fixedAssets, setFixedAssets] = useState(seedFixedAssets);
-  const [projects, setProjects] = useState(seedProjects);
-  const [service, setService] = useState(seedService);
-  const [documents, setDocuments] = useState(seedDocuments);
-  const [manualReceipts, setManualReceipts] = useState([]);
-  const [manualPayments, setManualPayments] = useState([]);
+  // Every collection below is now backed by Firestore via the shared
+  // useFirestoreCollection hook: it seeds itself from the app's existing
+  // seed data the first time the collection is empty, then stays live via
+  // Firestore's realtime listener. Session-only UI state (selected module,
+  // language, theme, the signed-in user) intentionally stays local — there's
+  // no reason someone else's currency display preference should sync to you.
+  const usersCol = useFirestoreCollection("users", seedUsers);
+  const materialsCol = useFirestoreCollection("materials", seedMaterials);
+  const productsCol = useFirestoreCollection("products", seedProducts);
+  const customersCol = useFirestoreCollection("customers", seedCustomers);
+  const suppliersCol = useFirestoreCollection("suppliers", seedSuppliers);
+  const leadsCol = useFirestoreCollection("leads", seedLeads);
+  const opportunitiesCol = useFirestoreCollection("opportunities", seedOpportunities);
+  const quotationsCol = useFirestoreCollection("quotations", seedQuotations);
+  const salesOrdersCol = useFirestoreCollection("salesOrders", seedSalesOrders);
+  const returnsCol = useFirestoreCollection("returns", seedReturns);
+  const purchaseRequestsCol = useFirestoreCollection("purchaseRequests", seedPurchaseRequests);
+  const purchaseOrdersCol = useFirestoreCollection("purchaseOrders", seedPurchaseOrders);
+  const purchaseInvoicesCol = useFirestoreCollection("purchaseInvoices", seedPurchaseInvoices);
+  const productionOrdersCol = useFirestoreCollection("productionOrders", seedProductionOrders);
+  const workCentersCol = useFirestoreCollection("workCenters", seedWorkCenters);
+  const qualityChecksCol = useFirestoreCollection("qualityChecks", seedQualityChecks);
+  const maintenanceCol = useFirestoreCollection("maintenance", seedMaintenance);
+  const transfersCol = useFirestoreCollection("transfers", seedTransfers);
+  const movementsCol = useFirestoreCollection("movements", seedMovements);
+  const stockCountsCol = useFirestoreCollection("stockCounts", seedStockCounts);
+  const itemLimitsCol = useFirestoreCollection("itemLimits", seedItemLimits);
+  const currenciesCol = useFirestoreCollection("currencies", seedCurrencies);
+  const coaCol = useFirestoreCollection("coa", seedCoA);
+  const taxRatesCol = useFirestoreCollection("taxRates", seedTaxRates);
+  const journalCol = useFirestoreCollection("journal", seedJournal);
+  const banksCol = useFirestoreCollection("banks", seedBanks);
+  const employeesCol = useFirestoreCollection("employees", seedEmployees);
+  const attendanceCol = useFirestoreCollection("attendance", seedAttendance);
+  const leavesCol = useFirestoreCollection("leaves", seedLeaves);
+  const payrollCol = useFirestoreCollection("payroll", seedPayroll);
+  const recruitmentCol = useFirestoreCollection("recruitment", seedRecruitment);
+  const expensesCol = useFirestoreCollection("expenses", seedExpenses);
+  const fixedAssetsCol = useFirestoreCollection("fixedAssets", seedFixedAssets);
+  const projectsCol = useFirestoreCollection("projects", seedProjects);
+  const serviceCol = useFirestoreCollection("service", seedService);
+  const documentsCol = useFirestoreCollection("documents", seedDocuments);
+  const manualReceiptsCol = useFirestoreCollection("manualReceipts", []);
+  const manualPaymentsCol = useFirestoreCollection("manualPayments", []);
+
+  const users = usersCol.data, materials = materialsCol.data, products = productsCol.data;
+  const customers = customersCol.data, suppliers = suppliersCol.data, leads = leadsCol.data;
+  const opportunities = opportunitiesCol.data, quotations = quotationsCol.data, salesOrders = salesOrdersCol.data;
+  const returns = returnsCol.data, purchaseRequests = purchaseRequestsCol.data, purchaseOrders = purchaseOrdersCol.data;
+  const purchaseInvoices = purchaseInvoicesCol.data, productionOrders = productionOrdersCol.data;
+  const workCenters = workCentersCol.data, qualityChecks = qualityChecksCol.data, maintenance = maintenanceCol.data;
+  const transfers = transfersCol.data, movements = movementsCol.data, stockCounts = stockCountsCol.data;
+  const itemLimits = itemLimitsCol.data, currencies = currenciesCol.data, coa = coaCol.data, taxRates = taxRatesCol.data;
+  const journal = journalCol.data, banks = banksCol.data, employees = employeesCol.data, attendance = attendanceCol.data;
+  const leaves = leavesCol.data, payroll = payrollCol.data, recruitment = recruitmentCol.data, expenses = expensesCol.data;
+  const fixedAssets = fixedAssetsCol.data, projects = projectsCol.data, service = serviceCol.data, documents = documentsCol.data;
+  const manualReceipts = manualReceiptsCol.data, manualPayments = manualPaymentsCol.data;
+
+  // Firestore's realtime listeners populate these collections asynchronously
+  // on first load — until the essentials arrive, render a loading screen
+  // rather than a broken dashboard referencing data that doesn't exist yet.
+  const stillLoading = usersCol.loading || materialsCol.loading || productsCol.loading || customersCol.loading || currenciesCol.loading;
+  const firstError = [usersCol, materialsCol, productsCol].map((c) => c.error).find(Boolean);
 
   const matById = useMemo(() => Object.fromEntries(materials.map((m) => [m.id, m])), [materials]);
   const prodById = useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
@@ -1413,195 +1608,169 @@ export default function App() {
 
   const role = user?.role;
   const canEdit = !!role && role !== "Viewer";
+  const isAdmin = role === "Admin";
+
+  function reportError(e) { alert(e.message || String(e)); }
 
   /* ---- Actions: Purchasing ---- */
-  function addPR(vals) { setPurchaseRequests((prev) => [...prev, { id: uid("PR"), ...vals, date: todayStr(), status: "Pending" }]); }
-  function approvePR(id, decision) { setPurchaseRequests((prev) => prev.map((p) => (p.id === id ? { ...p, status: decision } : p))); }
+  function addPR(vals) { purchaseRequestsCol.add({ ...vals, date: todayStr(), status: "Pending" }, uid("PR")); }
+  function updatePR(id, vals) { purchaseRequestsCol.update(id, vals); }
+  function approvePR(id, decision) { purchaseRequestsCol.update(id, { status: decision }); }
   function convertPRtoPO(pr) {
     const material = matById[pr.item];
     newPO(material.supplier, [{ id: pr.item, qty: pr.qty, cost: material.cost }]);
-    setPurchaseRequests((prev) => prev.map((p) => (p.id === pr.id ? { ...p, status: "Converted" } : p)));
+    purchaseRequestsCol.update(pr.id, { status: "Converted" });
   }
   function newPO(supplierId, items) {
-    setPurchaseOrders((prev) => [...prev, { id: uid("PO"), supplier: supplierId, date: todayStr(), status: "Pending", items }]);
+    purchaseOrdersCol.add({ supplier: supplierId, date: todayStr(), status: "Pending", items }, uid("PO"));
   }
   function receivePO(id) {
     const po = purchaseOrders.find((p) => p.id === id);
-    setPurchaseOrders((prev) => prev.map((p) => (p.id === id ? { ...p, status: "Received" } : p)));
-    setMaterials((prev) => prev.map((m) => {
-      const line = po.items.find((it) => it.id === m.id);
-      return line ? { ...m, stock: m.stock + line.qty } : m;
-    }));
-    setMovements((prev) => [...prev, ...po.items.map((it) => ({ id: uid("MV"), type: "IN", itemType: "Material", item: it.id, qty: it.qty, warehouse: "BR-HQ", date: todayStr(), ref: id }))]);
-    setPurchaseInvoices((prev) => [...prev, { id: uid("PINV"), po: id, supplier: po.supplier, amount: poTotal(po), date: todayStr(), status: "Unpaid" }]);
+    receivePurchaseOrder(po).catch(reportError);
   }
-  function payPurchaseInvoice(id) { setPurchaseInvoices((prev) => prev.map((p) => (p.id === id ? { ...p, status: "Paid" } : p))); }
+  function payPurchaseInvoice(id) { purchaseInvoicesCol.update(id, { status: "Paid" }); }
 
   /* ---- Actions: Manufacturing ---- */
   function canRunBatch(product, qty) { return product.bom.every((b) => matById[b.id].stock >= b.qty * qty); }
   function completeBatch(id) {
     const batch = productionOrders.find((p) => p.id === id);
     const product = prodById[batch.product];
-    if (!canRunBatch(product, batch.qty)) { alert("Insufficient raw materials to complete this batch."); return; }
-    setMaterials((prev) => prev.map((m) => {
-      const line = product.bom.find((b) => b.id === m.id);
-      return line ? { ...m, stock: +(m.stock - line.qty * batch.qty).toFixed(2) } : m;
-    }));
-    setProducts((prev) => prev.map((p) => p.id === product.id ? { ...p, stockByBranch: { ...p.stockByBranch, "BR-HQ": p.stockByBranch["BR-HQ"] + batch.qty } } : p));
-    setProductionOrders((prev) => prev.map((p) => (p.id === id ? { ...p, status: "Completed" } : p)));
-    setMovements((prev) => [
-      ...prev,
-      { id: uid("MV"), type: "IN", itemType: "Product", item: product.id, qty: batch.qty, warehouse: "BR-HQ", date: todayStr(), ref: id },
-      ...product.bom.map((b) => ({ id: uid("MV"), type: "OUT", itemType: "Material", item: b.id, qty: +(b.qty * batch.qty).toFixed(2), warehouse: "BR-HQ", date: todayStr(), ref: id })),
-    ]);
+    completeProductionBatch(batch, product, matById).catch(reportError);
   }
-  function newBatch(productId, qty) { setProductionOrders((prev) => [...prev, { id: uid("PB"), product: productId, qty, date: todayStr(), status: "Planned" }]); }
+  function newBatch(productId, qty) { productionOrdersCol.add({ product: productId, qty, date: todayStr(), status: "Planned" }, uid("PB")); }
+
+  /* ---- Actions: Manufacturing operations (Work Centers / Quality Control / Maintenance) ---- */
+  function addWorkCenter(vals) { workCentersCol.add({ ...vals, status: vals.status || "Idle" }, uid("WC")); }
+  function updateWorkCenter(id, vals) { workCentersCol.update(id, vals); }
+  function deleteWorkCenter(id) { workCentersCol.remove(id); }
+  function addQualityCheck(vals) { qualityChecksCol.add({ ...vals, date: todayStr() }, uid("QC")); }
+  function updateQualityCheck(id, vals) { qualityChecksCol.update(id, vals); }
+  function deleteQualityCheck(id) { qualityChecksCol.remove(id); }
+  function addMaintenance(vals) { maintenanceCol.add(vals, uid("MT")); }
+  function updateMaintenance(id, vals) { maintenanceCol.update(id, vals); }
+  function deleteMaintenance(id) { maintenanceCol.remove(id); }
+  function logMaintenanceService(id) {
+    const today = todayStr();
+    const next = new Date(today); next.setMonth(next.getMonth() + 3);
+    maintenanceCol.update(id, { lastService: today, nextDue: next.toISOString().slice(0, 10), status: "Up to Date" });
+  }
 
   /* ---- Actions: Inventory ---- */
   function transferStock(productId, from, to, qty) {
-    const product = prodById[productId];
-    if (product.stockByBranch[from] < qty) { alert(`${branchById[from].name} doesn't have enough ${product.name} to transfer.`); return; }
-    setProducts((prev) => prev.map((p) => p.id === productId ? { ...p, stockByBranch: { ...p.stockByBranch, [from]: p.stockByBranch[from] - qty, [to]: p.stockByBranch[to] + qty } } : p));
-    setTransfers((prev) => [...prev, { id: uid("TR"), product: productId, from, to, qty, date: todayStr() }]);
+    transferProductStock(productId, from, to, qty).catch(reportError);
   }
   function addStockCount(vals) {
     const isMaterial = vals.itemId.startsWith("RM");
     const systemQty = isMaterial ? (vals.warehouse === "BR-HQ" ? matById[vals.itemId].stock : 0) : prodById[vals.itemId].stockByBranch[vals.warehouse];
-    setStockCounts((prev) => [...prev, { id: uid("SC"), warehouse: vals.warehouse, item: vals.itemId, systemQty, countedQty: vals.countedQty, date: todayStr(), status: "Completed" }]);
+    stockCountsCol.add({ warehouse: vals.warehouse, item: vals.itemId, systemQty, countedQty: vals.countedQty, date: todayStr(), status: "Completed" }, uid("SC"));
   }
 
   /* ---- Actions: Store Management ---- */
   function addStoreItem(vals) {
     const isMaterial = vals.itemId.startsWith("RM");
     if (isMaterial && vals.warehouse !== "BR-HQ") { alert("Raw materials are only stocked at the factory warehouse."); return; }
-    if (isMaterial) {
-      setMaterials((prev) => prev.map((m) => (m.id === vals.itemId ? { ...m, stock: m.stock + vals.qty } : m)));
-    } else {
-      setProducts((prev) => prev.map((p) => (p.id === vals.itemId ? { ...p, stockByBranch: { ...p.stockByBranch, [vals.warehouse]: p.stockByBranch[vals.warehouse] + vals.qty } } : p)));
-    }
-    setMovements((prev) => [...prev, { id: uid("MV"), type: "IN", itemType: isMaterial ? "Material" : "Product", item: vals.itemId, qty: vals.qty, warehouse: vals.warehouse, date: todayStr(), ref: vals.reason || "Manual Add" }]);
+    addStoreItemTx({ itemId: vals.itemId, warehouse: vals.warehouse, qty: vals.qty, reason: vals.reason, isMaterial }).catch(reportError);
   }
   function removeStoreItem(vals) {
     const isMaterial = vals.itemId.startsWith("RM");
     if (isMaterial && vals.warehouse !== "BR-HQ") { alert("Raw materials are only stocked at the factory warehouse."); return; }
-    if (isMaterial) {
-      const mat = matById[vals.itemId];
-      if (mat.stock < vals.qty) { alert(`Not enough ${mat.name} in stock to remove.`); return; }
-      setMaterials((prev) => prev.map((m) => (m.id === vals.itemId ? { ...m, stock: m.stock - vals.qty } : m)));
-    } else {
-      const prod = prodById[vals.itemId];
-      if (prod.stockByBranch[vals.warehouse] < vals.qty) { alert(`Not enough ${prod.name} in stock at that warehouse to remove.`); return; }
-      setProducts((prev) => prev.map((p) => (p.id === vals.itemId ? { ...p, stockByBranch: { ...p.stockByBranch, [vals.warehouse]: p.stockByBranch[vals.warehouse] - vals.qty } } : p)));
-    }
-    setMovements((prev) => [...prev, { id: uid("MV"), type: "OUT", itemType: isMaterial ? "Material" : "Product", item: vals.itemId, qty: vals.qty, warehouse: vals.warehouse, date: todayStr(), ref: vals.reason || "Manual Out" }]);
+    const itemName = isMaterial ? matById[vals.itemId]?.name : prodById[vals.itemId]?.name;
+    removeStoreItemTx({ itemId: vals.itemId, warehouse: vals.warehouse, qty: vals.qty, reason: vals.reason, isMaterial, itemName }).catch(reportError);
   }
   function upsertLimit(vals) {
-    setItemLimits((prev) => {
-      const idx = prev.findIndex((l) => l.item === vals.item && l.warehouse === vals.warehouse);
-      if (idx >= 0) { const copy = [...prev]; copy[idx] = { ...copy[idx], min: vals.min, max: vals.max }; return copy; }
-      return [...prev, { id: uid("LIM"), item: vals.item, warehouse: vals.warehouse, min: vals.min, max: vals.max }];
-    });
+    const existing = itemLimits.find((l) => l.item === vals.item && l.warehouse === vals.warehouse);
+    if (existing) itemLimitsCol.update(existing.id, { min: vals.min, max: vals.max });
+    else itemLimitsCol.add({ item: vals.item, warehouse: vals.warehouse, min: vals.min, max: vals.max }, uid("LIM"));
   }
+  function deleteItemLimit(id) { itemLimitsCol.remove(id); }
 
   /* ---- Actions: Currencies ---- */
   function addCurrency(vals) {
     if (currencies.some((c) => c.code === vals.code.toUpperCase())) { alert("That currency code already exists."); return; }
-    setCurrencies((prev) => [...prev, { code: vals.code.toUpperCase(), rate: vals.rate }]);
+    currenciesCol.add({ code: vals.code.toUpperCase(), rate: vals.rate }, vals.code.toUpperCase());
   }
-  function updateCurrencyRate(code, rate) {
-    setCurrencies((prev) => prev.map((c) => (c.code === code ? { ...c, rate } : c)));
-  }
+  function updateCurrencyRate(code, rate) { currenciesCol.update(code, { rate }); }
 
   /* ---- Actions: CRM / Sales ---- */
-  function addLead(vals) { setLeads((prev) => [...prev, { id: uid("LD"), ...vals, status: "New", date: todayStr() }]); }
-  function addOpportunity(vals) { setOpportunities((prev) => [...prev, { id: uid("OP"), ...vals, stage: "Prospecting" }]); }
-  function addQuotation(vals) { setQuotations((prev) => [...prev, { id: uid("QT"), client: vals.client, date: todayStr(), items: [{ id: vals.item, qty: vals.qty }], status: "Draft" }]); }
+  function updateCustomer(id, vals) { customersCol.update(id, vals); }
+  function updateEmployee(id, vals) { employeesCol.update(id, vals); }
+  function addLead(vals) { leadsCol.add({ ...vals, status: "New", date: todayStr() }, uid("LD")); }
+  function updateLead(id, vals) { leadsCol.update(id, vals); }
+  function deleteLead(id) { leadsCol.remove(id); }
+  function addOpportunity(vals) { opportunitiesCol.add({ ...vals, stage: "Prospecting" }, uid("OP")); }
+  function updateOpportunity(id, vals) { opportunitiesCol.update(id, vals); }
+  function deleteOpportunity(id) { opportunitiesCol.remove(id); }
+  function addQuotation(vals) { quotationsCol.add({ client: vals.client, date: todayStr(), items: [{ id: vals.item, qty: vals.qty }], status: "Draft" }, uid("QT")); }
   function advanceQuotation(id) {
-    setQuotations((prev) => prev.map((q) => {
-      if (q.id !== id) return q;
-      const next = { Draft: "Sent", Sent: "Accepted" }[q.status];
-      return next ? { ...q, status: next } : q;
-    }));
+    const q = quotations.find((x) => x.id === id);
+    const next = { Draft: "Sent", Sent: "Accepted" }[q?.status];
+    if (next) quotationsCol.update(id, { status: next });
   }
   function convertQuotation(q) {
     const client = clientById[q.client];
-    newSalesOrder(q.client, client.branch, q.items.map((it) => ({ id: it.id, qty: it.qty, price: prodById[it.id].price })));
-    setQuotations((prev) => prev.map((x) => (x.id === q.id ? { ...x, status: "Converted" } : x)));
+    convertQuotationToOrder(q, client, prodById).catch(reportError);
   }
   function newSalesOrder(clientId, branchId, items) {
-    setSalesOrders((prev) => [...prev, { id: uid("SO"), client: clientId, branch: branchId, date: todayStr(), status: "Pending", items }]);
+    salesOrdersCol.add({ client: clientId, branch: branchId, date: todayStr(), status: "Pending", items }, uid("SO"));
   }
   function advanceSalesOrder(id) {
     const order = salesOrders.find((o) => o.id === id);
-    const wasPending = order.status === "Pending";
-
-    // A sales order can be created for more than is currently on the shelf
-    // (e.g. converted from a quotation written days earlier) — stock may
-    // have moved since. Check before committing to Delivered, the same way
-    // Out Items and the backend API already guard against over-deducting.
-    if (wasPending) {
-      for (const item of order.items) {
-        const product = prodById[item.id];
-        const available = product.stockByBranch[order.branch];
-        if (available < item.qty) {
-          alert(`Not enough ${product.name} in stock at ${branchById[order.branch].name} to deliver this order (need ${item.qty}, have ${available}). Transfer stock in first, or adjust the order.`);
-          return;
-        }
-      }
+    if (order.status === "Pending") {
+      deliverSalesOrder(order, branchById[order.branch]?.name).catch(reportError);
+      return;
     }
-
-    setSalesOrders((prev) => prev.map((o) => {
-      if (o.id !== id) return o;
-      const next = { Pending: "Delivered", Delivered: "Invoiced", Invoiced: "Paid" }[o.status];
-      return next ? { ...o, status: next } : o;
-    }));
-    if (wasPending) {
-      setProducts((prev) => prev.map((p) => {
-        const line = order.items.find((it) => it.id === p.id);
-        if (!line) return p;
-        return { ...p, stockByBranch: { ...p.stockByBranch, [order.branch]: p.stockByBranch[order.branch] - line.qty } };
-      }));
-      setMovements((prev) => [...prev, ...order.items.map((it) => ({ id: uid("MV"), type: "OUT", itemType: "Product", item: it.id, qty: it.qty, warehouse: order.branch, date: todayStr(), ref: id }))]);
-    }
+    const next = { Delivered: "Invoiced", Invoiced: "Paid" }[order.status];
+    if (next) salesOrdersCol.update(id, { status: next });
   }
-  function addReturn(vals) { setReturns((prev) => [...prev, { id: uid("RT"), so: vals.so, item: vals.item, qty: vals.qty, reason: vals.reason, date: todayStr(), status: "Requested" }]); }
+  function addReturn(vals) { returnsCol.add({ so: vals.so, item: vals.item, qty: vals.qty, reason: vals.reason, date: todayStr(), status: "Requested" }, uid("RT")); }
   function advanceReturn(r) {
-    if (r.status === "Requested") { setReturns((prev) => prev.map((x) => (x.id === r.id ? { ...x, status: "Approved" } : x))); return; }
+    if (r.status === "Requested") { returnsCol.update(r.id, { status: "Approved" }); return; }
     if (r.status === "Approved") {
       const order = salesOrders.find((o) => o.id === r.so);
-      setProducts((prev) => prev.map((p) => (p.id === r.item ? { ...p, stockByBranch: { ...p.stockByBranch, [order.branch]: p.stockByBranch[order.branch] + r.qty } } : p)));
-      setMovements((prev) => [...prev, { id: uid("MV"), type: "IN", itemType: "Product", item: r.item, qty: r.qty, warehouse: order.branch, date: todayStr(), ref: r.id }]);
-      setReturns((prev) => prev.map((x) => (x.id === r.id ? { ...x, status: "Restocked" } : x)));
+      restockReturn(r, order.branch).catch(reportError);
     }
   }
 
   /* ---- Actions: HR / Expenses / Projects / Service / Accounting ---- */
-  function setLeaveStatus(id, status) { setLeaves((prev) => prev.map((l) => (l.id === id ? { ...l, status } : l))); }
-  function setExpenseStatus(id, status) { setExpenses((prev) => prev.map((e) => (e.id === id ? { ...e, status } : e))); }
-  function payPayroll(id) { setPayroll((prev) => prev.map((p) => (p.id === id ? { ...p, status: "Paid" } : p))); }
-  function addAttendance(vals) { setAttendance((prev) => [...prev, { id: uid("AT"), ...vals }]); }
-  function addLeave(vals) { setLeaves((prev) => [...prev, { id: uid("LV"), ...vals, status: "Pending" }]); }
-  function addRecruit(vals) { setRecruitment((prev) => [...prev, { id: uid("REC"), ...vals }]); }
-  function addExpense(vals) { setExpenses((prev) => [...prev, { id: uid("EXP"), ...vals, date: todayStr(), status: "Pending" }]); }
-  function addProject(vals) { setProjects((prev) => [...prev, { id: uid("PRJ"), ...vals, start: todayStr(), end: todayStr(), percent: 0 }]); }
-  function addService(vals) { setService((prev) => [...prev, { id: uid("SV"), ...vals, status: "Open", date: todayStr() }]); }
+  function setLeaveStatus(id, status) { leavesCol.update(id, { status }); }
+  function setExpenseStatus(id, status) { expensesCol.update(id, { status }); }
+  function payPayroll(id) { payrollCol.update(id, { status: "Paid" }); }
+  function addAttendance(vals) { attendanceCol.add(vals, uid("AT")); }
+  function updateAttendance(id, vals) { attendanceCol.update(id, vals); }
+  function deleteAttendance(id) { attendanceCol.remove(id); }
+  function addLeave(vals) { leavesCol.add({ ...vals, status: "Pending" }, uid("LV")); }
+  function addRecruit(vals) { recruitmentCol.add(vals, uid("REC")); }
+  function updateRecruit(id, vals) { recruitmentCol.update(id, vals); }
+  function deleteRecruit(id) { recruitmentCol.remove(id); }
+  function addExpense(vals) { expensesCol.add({ ...vals, date: todayStr(), status: "Pending" }, uid("EXP")); }
+  function updateExpense(id, vals) { expensesCol.update(id, vals); }
+  function addProject(vals) { projectsCol.add({ ...vals, start: todayStr(), end: todayStr(), percent: 0 }, uid("PRJ")); }
+  function updateProject(id, vals) { projectsCol.update(id, vals); }
+  function addService(vals) { serviceCol.add({ ...vals, status: "Open", date: todayStr() }, uid("SV")); }
+  function updateServiceTicket(id, vals) { serviceCol.update(id, vals); }
   function advanceService(id) {
-    setService((prev) => prev.map((s) => {
-      if (s.id !== id) return s;
-      const next = { Open: "In Progress", "In Progress": "Resolved" }[s.status];
-      return next ? { ...s, status: next } : s;
-    }));
+    const s = service.find((x) => x.id === id);
+    const next = { Open: "In Progress", "In Progress": "Resolved" }[s?.status];
+    if (next) serviceCol.update(id, { status: next });
   }
-  function addCoA(vals) { setCoa((prev) => [...prev, vals]); }
-  function addJournal(vals) { setJournal((prev) => [...prev, { id: uid("JE"), ...vals }]); }
+  function addCoA(vals) { coaCol.add(vals, vals.code); }
+  function updateCoA(code, vals) { coaCol.update(code, vals); }
+  function deleteCoA(code) {
+    const acct = coa.find((a) => a.code === code);
+    if (journal.some((j) => j.debit === acct.name || j.credit === acct.name)) { alert("This account has journal entries posted against it — reassign or remove those first."); return; }
+    coaCol.remove(code);
+  }
+  function addJournal(vals) { journalCol.add(vals, uid("JE")); }
+  function updateJournal(id, vals) { journalCol.update(id, vals); }
 
   /* ---- Actions: Suppliers / Users / Banks / Fixed Assets / Documents / Manual Receipts & Payments ---- */
-  function addSupplier(vals) { setSuppliers((prev) => [...prev, { id: uid("SUP"), ...vals }]); }
+  function addSupplier(vals) { suppliersCol.add(vals, uid("SUP")); }
+  function updateSupplier(id, vals) { suppliersCol.update(id, vals); }
   function deleteSupplier(id) {
     if (materials.some((m) => m.supplier === id)) { alert("This supplier is linked to existing materials — reassign those materials before deleting it."); return; }
-    setSuppliers((prev) => prev.filter((s) => s.id !== id));
+    suppliersCol.remove(id);
   }
-  function addUser(vals) { setUsers((prev) => [...prev, { id: uid("u"), ...vals }]); }
+  function addUser(vals) { usersCol.add(vals, uid("u")); }
   function updateUserRole(id, newRole) {
     const target = users.find((u) => u.id === id);
     if (!target) return;
@@ -1610,7 +1779,7 @@ export default function App() {
       alert("You can't change the last Admin's role — promote someone else first.");
       return;
     }
-    setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, role: newRole } : u)));
+    usersCol.update(id, { role: newRole });
   }
   function deleteUser(id) {
     const target = users.find((u) => u.id === id);
@@ -1619,35 +1788,63 @@ export default function App() {
     const remainingAdmins = users.filter((u) => u.role === "Admin" && u.id !== id).length;
     if (target.role === "Admin" && remainingAdmins === 0) { alert("You can't delete the last Admin account."); return; }
     if (!confirm(`Delete user "${target.name}"? This can't be undone.`)) return;
-    setUsers((prev) => prev.filter((u) => u.id !== id));
+    usersCol.remove(id);
   }
-  function addBank(vals) { setBanks((prev) => [...prev, { id: uid("BANK"), ...vals }]); }
-  function deleteBank(id) { setBanks((prev) => prev.filter((b) => b.id !== id)); }
-  function addFixedAsset(vals) { setFixedAssets((prev) => [...prev, { id: uid("FA"), ...vals }]); }
-  function deleteFixedAsset(id) { setFixedAssets((prev) => prev.filter((a) => a.id !== id)); }
-  function addDocument(vals) { setDocuments((prev) => [...prev, { id: uid("DOC"), ...vals, uploadedBy: user?.name || "Unknown", date: todayStr() }]); }
-  function deleteDocument(id) { setDocuments((prev) => prev.filter((d) => d.id !== id)); }
-  function addManualReceipt(vals) { setManualReceipts((prev) => [...prev, { id: uid("RCP"), ...vals, date: todayStr() }]); }
-  function deleteManualReceipt(id) { setManualReceipts((prev) => prev.filter((r) => r.id !== id)); }
-  function addManualPayment(vals) { setManualPayments((prev) => [...prev, { id: uid("PAY"), ...vals, date: todayStr() }]); }
-  function deleteManualPayment(id) { setManualPayments((prev) => prev.filter((p) => p.id !== id)); }
+  function addBank(vals) { banksCol.add(vals, uid("BANK")); }
+  function updateBank(id, vals) { banksCol.update(id, vals); }
+  function deleteBank(id) { banksCol.remove(id); }
+  function addFixedAsset(vals) { fixedAssetsCol.add(vals, uid("FA")); }
+  function updateFixedAsset(id, vals) { fixedAssetsCol.update(id, vals); }
+  function deleteFixedAsset(id) { fixedAssetsCol.remove(id); }
+  function addDocument(vals) { documentsCol.add({ ...vals, uploadedBy: user?.name || "Unknown", date: todayStr() }, uid("DOC")); }
+  function updateDocument(id, vals) { documentsCol.update(id, vals); }
+  function deleteDocument(id) { documentsCol.remove(id); }
+  function addManualReceipt(vals) { manualReceiptsCol.add({ ...vals, date: todayStr() }, uid("RCP")); }
+  function updateManualReceipt(id, vals) { manualReceiptsCol.update(id, vals); }
+  function deleteManualReceipt(id) { manualReceiptsCol.remove(id); }
+  function addManualPayment(vals) { manualPaymentsCol.add({ ...vals, date: todayStr() }, uid("PAY")); }
+  function updateManualPayment(id, vals) { manualPaymentsCol.update(id, vals); }
+  function deleteManualPayment(id) { manualPaymentsCol.remove(id); }
+
+  /* ---- Actions: Taxes ---- */
+  function addTaxRate(vals) { taxRatesCol.add({ ...vals, isActive: true }, uid("TAX")); }
+  function updateTaxRate(id, vals) { taxRatesCol.update(id, vals); }
+  function deleteTaxRate(id) { taxRatesCol.remove(id); }
 
   const ctxValue = {
-    user, role, canEdit, money, currency, currencies, toUSD, t, lang, dir,
+    user, role, canEdit, isAdmin, money, currency, currencies, toUSD, t, lang, dir,
     materials, products, customers, suppliers, leads, opportunities, quotations, salesOrders, returns,
     purchaseRequests, purchaseOrders, purchaseInvoices, productionOrders, transfers, movements, stockCounts, itemLimits,
     coa, journal, banks, employees, attendance, leaves, payroll, recruitment, expenses, fixedAssets, projects, service, documents,
     users, manualReceipts, manualPayments,
-    matById, prodById, clientById, supById, branchById, totalStock, orderTotal, poTotal,
-    addPR, approvePR, convertPRtoPO, newPO, receivePO, payPurchaseInvoice,
+    matById, prodById, clientById, supById, branchById, totalStock, orderTotal, poTotal, updateCustomer, updateEmployee,
+    addPR, updatePR, approvePR, convertPRtoPO, newPO, receivePO, payPurchaseInvoice,
     canRunBatch, completeBatch, newBatch, transferStock, addStockCount,
-    addStoreItem, removeStoreItem, upsertLimit, addCurrency, updateCurrencyRate,
-    addLead, addOpportunity, addQuotation, advanceQuotation, convertQuotation, newSalesOrder, advanceSalesOrder, addReturn, advanceReturn,
-    setLeaveStatus, setExpenseStatus, payPayroll, addAttendance, addLeave, addRecruit, addExpense, addProject, addService, advanceService,
-    addCoA, addJournal,
-    addSupplier, deleteSupplier, addUser, updateUserRole, deleteUser, addBank, deleteBank,
-    addFixedAsset, deleteFixedAsset, addDocument, deleteDocument, addManualReceipt, deleteManualReceipt, addManualPayment, deleteManualPayment,
+    workCenters, addWorkCenter, updateWorkCenter, deleteWorkCenter,
+    qualityChecks, addQualityCheck, updateQualityCheck, deleteQualityCheck,
+    maintenance, addMaintenance, updateMaintenance, deleteMaintenance, logMaintenanceService,
+    addStoreItem, removeStoreItem, upsertLimit, deleteItemLimit, addCurrency, updateCurrencyRate,
+    addLead, updateLead, deleteLead, addOpportunity, updateOpportunity, deleteOpportunity,
+    addQuotation, advanceQuotation, convertQuotation, newSalesOrder, advanceSalesOrder, addReturn, advanceReturn,
+    setLeaveStatus, setExpenseStatus, updateExpense, payPayroll, addAttendance, updateAttendance, deleteAttendance,
+    addLeave, addRecruit, updateRecruit, deleteRecruit, addExpense, addProject, updateProject, addService, updateServiceTicket, advanceService,
+    addCoA, updateCoA, deleteCoA, addJournal, updateJournal,
+    addSupplier, updateSupplier, deleteSupplier, addUser, updateUserRole, deleteUser, addBank, updateBank, deleteBank,
+    addFixedAsset, updateFixedAsset, deleteFixedAsset, addDocument, updateDocument, deleteDocument,
+    addManualReceipt, updateManualReceipt, deleteManualReceipt, addManualPayment, updateManualPayment, deleteManualPayment,
+    addTaxRate, updateTaxRate, deleteTaxRate, taxRates,
   };
+
+  if (stillLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "#1B2421", color: "#F3EFE6" }}>
+        <div className="text-center">
+          <div className="text-sm uppercase tracking-widest opacity-70 mb-2">CodePulse</div>
+          <div className="text-xs opacity-50">{firstError ? `Couldn't connect to Firebase: ${firstError.message}` : "Loading live data…"}</div>
+        </div>
+      </div>
+    );
+  }
 
   if (!user) return <Login onLogin={setUser} lang={lang} setLang={setLang} t={t} users={users} />;
 
@@ -1790,6 +1987,7 @@ function PageRouter({ module, sub }) {
     if (sub === "banks") return <BanksPage />;
     if (sub === "arreceipts") return <ArReceiptsPage />;
     if (sub === "appayments") return <ApPaymentsPage />;
+    if (sub === "taxes") return <TaxesPage />;
     if (sub === "finreports") return <FinReportsPage />;
   }
   if (module === "hr") {
@@ -1801,7 +1999,12 @@ function PageRouter({ module, sub }) {
   }
   if (module === "expenses") return <ExpensesPage />;
   if (module === "fixedassets") return <FixedAssetsPage />;
-  if (module === "manufacturing") return <ManufacturingPage />;
+  if (module === "manufacturing") {
+    if (sub === "productionorders") return <ManufacturingPage />;
+    if (sub === "workcenters") return <WorkCentersPage />;
+    if (sub === "qualitycontrol") return <QualityControlPage />;
+    if (sub === "maintenance") return <MaintenancePage />;
+  }
   if (module === "projects") return <ProjectsPage />;
   if (module === "service") return <ServicePage />;
   if (module === "documents") return <DocumentsPage />;
@@ -1871,35 +2074,43 @@ function Dashboard() {
    ================================================================ */
 
 function LeadsPage() {
-  const { leads, addLead, canEdit } = useApp();
+  const { leads, addLead, updateLead, deleteLead, canEdit } = useApp();
   return (
     <ListPage title="Leads" sub="Prospective hotel accounts not yet converted to customers." canEdit={canEdit}
       addFields={[{ key: "name", label: "Hotel Name" }, { key: "company", label: "Group" }, { key: "source", label: "Source" }, { key: "owner", label: "Owner", default: "Jordan Blake" }]}
-      onAdd={addLead}
+      onAdd={addLead} onUpdate={updateLead} onDelete={canEdit ? deleteLead : undefined}
       columns={["ID", "Hotel", "Group", "Source", "Owner", "Status", "Date"]} rows={leads}
       renderRow={(l) => (<><Td mono>{l.id}</Td><Td>{l.name}</Td><Td>{l.company}</Td><Td>{l.source}</Td><Td>{l.owner}</Td><Td><Pill>{l.status}</Pill></Td><Td mono>{l.date}</Td></>)} />
   );
 }
 function CustomersPage() {
-  const { customers, salesOrders, orderTotal, branchById, money } = useApp();
+  const { customers, salesOrders, orderTotal, branchById, money, updateCustomer, isAdmin } = useApp();
+  const [editingId, setEditingId] = useState(null);
+  const editingRow = customers.find((c) => c.id === editingId);
+  const fields = [{ key: "name", label: "Hotel Name" }, { key: "location", label: "Location" }, { key: "contact", label: "Contact" }, { key: "branch", label: "Servicing Branch", type: "select", options: Object.values(branchById).map((b) => ({ value: b.id, label: b.name })) }];
   return (
     <div>
       <SectionHeader title="Customers" sub="Hotel accounts with active or historical orders." />
-      <Table title="Customers" columns={["ID", "Hotel", "Location", "Servicing Branch", "Contact", "Lifetime Orders", "Lifetime Value"]} rows={customers}
+      {editingRow && (
+        <AddForm key={editingId} fields={fields} initialValues={editingRow}
+          onSubmit={(vals) => { updateCustomer(editingId, vals); setEditingId(null); }} submitLabel="Save Changes" />
+      )}
+      <Table title="Customers" columns={["ID", "Hotel", "Location", "Servicing Branch", "Contact", "Lifetime Orders", "Lifetime Value", ""]} rows={customers}
         renderRow={(c) => {
           const orders = salesOrders.filter((o) => o.client === c.id);
           const value = orders.reduce((s, o) => s + orderTotal(o), 0);
-          return (<><Td mono>{c.id}</Td><Td>{c.name}</Td><Td>{c.location}</Td><Td>{branchById[c.branch].name}</Td><Td>{c.contact}</Td><Td mono>{orders.length}</Td><Td mono>{money(value)}</Td></>);
+          return (<><Td mono>{c.id}</Td><Td>{c.name}</Td><Td>{c.location}</Td><Td>{branchById[c.branch].name}</Td><Td>{c.contact}</Td><Td mono>{orders.length}</Td><Td mono>{money(value)}</Td>
+            <Td>{isAdmin && <Button variant="ghost" onClick={() => setEditingId(c.id)}>Edit</Button>}</Td></>);
         }} />
     </div>
   );
 }
 function OpportunitiesPage() {
-  const { opportunities, addOpportunity, canEdit, clientById, money, customers } = useApp();
+  const { opportunities, addOpportunity, updateOpportunity, deleteOpportunity, canEdit, clientById, money, customers } = useApp();
   return (
     <ListPage title="Opportunities" sub="Deals in progress with existing or prospective hotel accounts." canEdit={canEdit}
       addFields={[{ key: "customer", label: "Customer", type: "select", options: customers.map((c) => ({ value: c.id, label: c.name })) }, { key: "title", label: "Deal" }, { key: "value", label: "Value", type: "money", default: 5000 }, { key: "closeDate", label: "Close Date", type: "date", default: "2026-09-30" }]}
-      onAdd={addOpportunity}
+      onAdd={addOpportunity} onUpdate={updateOpportunity} onDelete={canEdit ? deleteOpportunity : undefined}
       columns={["ID", "Customer", "Deal", "Value", "Stage", "Close Date"]} rows={opportunities}
       renderRow={(o) => (<><Td mono>{o.id}</Td><Td>{clientById[o.customer]?.name || o.customer}</Td><Td>{o.title}</Td><Td mono>{money(o.value)}</Td><Td><Pill>{o.stage}</Pill></Td><Td mono>{o.closeDate}</Td></>)} />
   );
@@ -2012,27 +2223,37 @@ function ReturnsPage() {
    ================================================================ */
 
 function SuppliersPage() {
-  const { suppliers, addSupplier, deleteSupplier, canEdit } = useApp();
+  const { suppliers, addSupplier, updateSupplier, deleteSupplier, canEdit, isAdmin } = useApp();
+  const [editingId, setEditingId] = useState(null);
+  const fields = [{ key: "name", label: "Name" }, { key: "contact", label: "Contact" }, { key: "lead", label: "Lead Time", type: "number", default: 5 }];
+  const editingRow = suppliers.find((s) => s.id === editingId);
   return (
     <div>
       <SectionHeader title="Suppliers" sub="Vendors providing raw materials to the factory." />
-      {canEdit && <AddForm
-        fields={[{ key: "name", label: "Name" }, { key: "contact", label: "Contact" }, { key: "lead", label: "Lead Time", type: "number", default: 5 }]}
-        onSubmit={addSupplier} submitLabel="+ Add Supplier" />}
+      {editingRow ? (
+        <AddForm key={editingId} fields={fields} initialValues={editingRow}
+          onSubmit={(vals) => { updateSupplier(editingId, vals); setEditingId(null); }} submitLabel="Save Changes" />
+      ) : canEdit && (
+        <AddForm fields={fields} onSubmit={addSupplier} submitLabel="+ Add Supplier" />
+      )}
       <Table title="Suppliers" columns={["ID", "Supplier", "Contact", "Lead Time", ""]} rows={suppliers}
         renderRow={(s) => (<><Td mono>{s.id}</Td><Td>{s.name}</Td><Td>{s.contact}</Td><Td mono>{s.lead} days</Td>
-          <Td>{canEdit && <Button variant="danger" onClick={() => deleteSupplier(s.id)}>Delete</Button>}</Td></>)} />
+          <Td>{isAdmin && <Button variant="ghost" onClick={() => setEditingId(s.id)}>Edit</Button>}{canEdit && <Button variant="danger" onClick={() => deleteSupplier(s.id)}>Delete</Button>}</Td></>)} />
     </div>
   );
 }
 function PurchaseRequestsPage() {
-  const { purchaseRequests, materials, matById, addPR, approvePR, convertPRtoPO, canEdit } = useApp();
+  const { purchaseRequests, materials, matById, addPR, updatePR, approvePR, convertPRtoPO, canEdit, isAdmin } = useApp();
+  const [editingId, setEditingId] = useState(null);
+  const fields = [{ key: "item", label: "Material", type: "select", options: materials.map((m) => ({ value: m.id, label: m.name })) }, { key: "qty", label: "Qty", type: "number", default: 100 }, { key: "requestedBy", label: "Requested By", default: "Priya Nair" }, { key: "department", label: "Department", default: "Production" }];
+  const editingRow = purchaseRequests.find((p) => p.id === editingId);
   return (
     <div>
       <SectionHeader title="Purchase Requests" sub="Internal requests for raw materials, approved before a PO is raised." />
-      {canEdit && <AddForm
-        fields={[{ key: "item", label: "Material", type: "select", options: materials.map((m) => ({ value: m.id, label: m.name })) }, { key: "qty", label: "Qty", type: "number", default: 100 }, { key: "requestedBy", label: "Requested By", default: "Priya Nair" }, { key: "department", label: "Department", default: "Production" }]}
-        onSubmit={addPR} submitLabel="+ Request" />}
+      {editingRow ? (
+        <AddForm key={editingId} fields={fields} initialValues={editingRow}
+          onSubmit={(vals) => { updatePR(editingId, vals); setEditingId(null); }} submitLabel="Save Changes" />
+      ) : canEdit && <AddForm fields={fields} onSubmit={addPR} submitLabel="+ Request" />}
       <Table title="Purchase Requests" columns={["PR", "Material", "Qty", "Requested By", "Department", "Date", "Status", ""]} rows={purchaseRequests}
         renderRow={(p) => (
           <>
@@ -2041,6 +2262,7 @@ function PurchaseRequestsPage() {
             <Td>
               {canEdit && p.status === "Pending" && <><Button onClick={() => approvePR(p.id, "Approved")}>Approve</Button><Button variant="danger" onClick={() => approvePR(p.id, "Rejected")}>Reject</Button></>}
               {canEdit && p.status === "Approved" && <Button variant="accent" onClick={() => convertPRtoPO(p)}>Convert to PO</Button>}
+              {isAdmin && <Button variant="ghost" onClick={() => setEditingId(p.id)}>Edit</Button>}
             </Td>
           </>
         )} />
@@ -2266,24 +2488,29 @@ function OutItemsPage() {
   );
 }
 function ItemLimitsPage() {
-  const { itemLimits, materials, products, matById, prodById, branchById, upsertLimit, canEdit } = useApp();
+  const { itemLimits, materials, products, matById, prodById, branchById, upsertLimit, deleteItemLimit, canEdit, isAdmin } = useApp();
   const itemOptions = [...materials.map((m) => ({ value: m.id, label: m.name })), ...products.map((p) => ({ value: p.id, label: p.name }))];
+  const [editingId, setEditingId] = useState(null);
   function currentStock(itemId, warehouse) {
     if (itemId.startsWith("RM")) return warehouse === "BR-HQ" ? matById[itemId].stock : 0;
     return prodById[itemId].stockByBranch[warehouse];
   }
+  const fields = [{ key: "item", label: "Item", type: "select", options: itemOptions }, { key: "warehouse", label: "Warehouse", type: "select", options: BRANCHES.map((b) => ({ value: b.id, label: b.name })) }, { key: "min", label: "Min", type: "number", default: 50 }, { key: "max", label: "Max", type: "number", default: 500 }];
+  const editingRow = itemLimits.find((l) => l.id === editingId);
   return (
     <div>
       <SectionHeader title="Item Limits" sub="Set a minimum and maximum stock level per item, per warehouse." />
-      {canEdit && <AddForm
-        fields={[{ key: "item", label: "Item", type: "select", options: itemOptions }, { key: "warehouse", label: "Warehouse", type: "select", options: BRANCHES.map((b) => ({ value: b.id, label: b.name })) }, { key: "min", label: "Min", type: "number", default: 50 }, { key: "max", label: "Max", type: "number", default: 500 }]}
-        onSubmit={upsertLimit} submitLabel="Set Limit" />}
-      <Table title="Item Limits" columns={["ID", "Item", "Warehouse", "Current Stock", "Min", "Max", "Status"]} rows={itemLimits}
+      {editingRow ? (
+        <AddForm key={editingId} fields={fields} initialValues={editingRow}
+          onSubmit={(vals) => { upsertLimit(vals); setEditingId(null); }} submitLabel="Save Changes" />
+      ) : canEdit && <AddForm fields={fields} onSubmit={upsertLimit} submitLabel="Set Limit" />}
+      <Table title="Item Limits" columns={["ID", "Item", "Warehouse", "Current Stock", "Min", "Max", "Status", ""]} rows={itemLimits}
         renderRow={(l) => {
           const name = l.item.startsWith("RM") ? matById[l.item]?.name : prodById[l.item]?.name;
           const stock = currentStock(l.item, l.warehouse);
           const status = stock < l.min ? "Below Min" : stock > l.max ? "Above Max" : "Within Range";
-          return (<><Td mono>{l.id}</Td><Td>{name}</Td><Td>{branchById[l.warehouse].name}</Td><Td mono>{stock}</Td><Td mono>{l.min}</Td><Td mono>{l.max}</Td><Td><Pill>{status}</Pill></Td></>);
+          return (<><Td mono>{l.id}</Td><Td>{name}</Td><Td>{branchById[l.warehouse].name}</Td><Td mono>{stock}</Td><Td mono>{l.min}</Td><Td mono>{l.max}</Td><Td><Pill>{status}</Pill></Td>
+            <Td>{isAdmin && <Button variant="ghost" onClick={() => setEditingId(l.id)}>Edit</Button>}{canEdit && <Button variant="danger" onClick={() => deleteItemLimit(l.id)}>Delete</Button>}</Td></>);
         }} />
       {itemLimits.length === 0 && <div className="text-sm mt-3" style={{ color: "var(--text-secondary)" }}>No limits set yet.</div>}
     </div>
@@ -2295,25 +2522,30 @@ function ItemLimitsPage() {
    ================================================================ */
 
 function CoaPage() {
-  const { coa, addCoA, canEdit } = useApp();
+  const { coa, addCoA, updateCoA, deleteCoA, canEdit } = useApp();
   return (
-    <ListPage title="Chart of Accounts" sub="The ledger accounts used across journal entries and reports." canEdit={canEdit}
+    <ListPage title="Chart of Accounts" sub="The ledger accounts used across journal entries and reports." canEdit={canEdit} idKey="code"
       addFields={[{ key: "code", label: "Code", default: "6000" }, { key: "name", label: "Account Name" }, { key: "type", label: "Type", type: "select", options: ["Asset", "Liability", "Equity", "Revenue", "Expense"] }]}
-      onAdd={addCoA}
+      onAdd={addCoA} onUpdate={updateCoA} onDelete={canEdit ? deleteCoA : undefined}
       columns={["Code", "Account", "Type"]} rows={coa}
       renderRow={(a) => (<><Td mono>{a.code}</Td><Td>{a.name}</Td><Td><Pill>{a.type}</Pill></Td></>)} />
   );
 }
 function JournalPage() {
-  const { journal, coa, addJournal, canEdit, money } = useApp();
+  const { journal, coa, addJournal, updateJournal, canEdit, isAdmin, money } = useApp();
+  const [editingId, setEditingId] = useState(null);
+  const fields = [{ key: "date", label: "Date", type: "date", default: "2026-08-17" }, { key: "memo", label: "Memo" }, { key: "debit", label: "Debit Account", type: "select", options: coa.map((a) => a.name) }, { key: "credit", label: "Credit Account", type: "select", options: coa.map((a) => a.name) }, { key: "amount", label: "Amount", type: "money", default: 100 }];
+  const editingRow = journal.find((j) => j.id === editingId);
   return (
     <div>
       <SectionHeader title="Journal Entries" sub="Manual double-entry postings." />
-      {canEdit && <AddForm
-        fields={[{ key: "date", label: "Date", type: "date", default: "2026-08-17" }, { key: "memo", label: "Memo" }, { key: "debit", label: "Debit Account", type: "select", options: coa.map((a) => a.name) }, { key: "credit", label: "Credit Account", type: "select", options: coa.map((a) => a.name) }, { key: "amount", label: "Amount", type: "money", default: 100 }]}
-        onSubmit={addJournal} />}
-      <Table title="Journal Entries" columns={["Entry", "Date", "Memo", "Debit", "Credit", "Amount"]} rows={journal}
-        renderRow={(j) => (<><Td mono>{j.id}</Td><Td mono>{j.date}</Td><Td>{j.memo}</Td><Td>{j.debit}</Td><Td>{j.credit}</Td><Td mono>{money(j.amount)}</Td></>)} />
+      {editingRow ? (
+        <AddForm key={editingId} fields={fields} initialValues={editingRow}
+          onSubmit={(vals) => { updateJournal(editingId, vals); setEditingId(null); }} submitLabel="Save Changes" />
+      ) : canEdit && <AddForm fields={fields} onSubmit={addJournal} />}
+      <Table title="Journal Entries" columns={["Entry", "Date", "Memo", "Debit", "Credit", "Amount", ""]} rows={journal}
+        renderRow={(j) => (<><Td mono>{j.id}</Td><Td mono>{j.date}</Td><Td>{j.memo}</Td><Td>{j.debit}</Td><Td>{j.credit}</Td><Td mono>{money(j.amount)}</Td>
+          <Td>{isAdmin && <Button variant="ghost" onClick={() => setEditingId(j.id)}>Edit</Button>}</Td></>)} />
     </div>
   );
 }
@@ -2335,58 +2567,125 @@ function CashPage() {
   );
 }
 function BanksPage() {
-  const { banks, addBank, deleteBank, money, canEdit } = useApp();
+  const { banks, addBank, updateBank, deleteBank, money, canEdit, isAdmin } = useApp();
+  const [editingId, setEditingId] = useState(null);
+  const fields = [{ key: "name", label: "Bank Account" }, { key: "number", label: "Number", default: "****0000" }, { key: "balance", label: "Balance", type: "money", default: 0 }];
+  const editingRow = banks.find((b) => b.id === editingId);
   return (
     <div>
       <SectionHeader title="Banks" sub="Company bank accounts." />
-      {canEdit && <AddForm
-        fields={[{ key: "name", label: "Bank Account" }, { key: "number", label: "Number", default: "****0000" }, { key: "balance", label: "Balance", type: "money", default: 0 }]}
-        onSubmit={addBank} submitLabel="+ Add Bank Account" />}
+      {editingRow ? (
+        <AddForm key={editingId} fields={fields} initialValues={editingRow}
+          onSubmit={(vals) => { updateBank(editingId, vals); setEditingId(null); }} submitLabel="Save Changes" />
+      ) : canEdit && (
+        <AddForm fields={fields} onSubmit={addBank} submitLabel="+ Add Bank Account" />
+      )}
       <Table title="Banks" columns={["ID", "Bank Account", "Number", "Balance", ""]} rows={banks}
         renderRow={(b) => (<><Td mono>{b.id}</Td><Td>{b.name}</Td><Td mono>{b.number}</Td><Td mono>{money(b.balance)}</Td>
-          <Td>{canEdit && <Button variant="danger" onClick={() => deleteBank(b.id)}>Delete</Button>}</Td></>)} />
+          <Td>{isAdmin && <Button variant="ghost" onClick={() => setEditingId(b.id)}>Edit</Button>}{canEdit && <Button variant="danger" onClick={() => deleteBank(b.id)}>Delete</Button>}</Td></>)} />
     </div>
   );
 }
 function ArReceiptsPage() {
-  const { salesOrders, clientById, orderTotal, money, customers, manualReceipts, addManualReceipt, deleteManualReceipt, canEdit } = useApp();
+  const { salesOrders, clientById, orderTotal, money, customers, manualReceipts, addManualReceipt, updateManualReceipt, deleteManualReceipt, canEdit, isAdmin } = useApp();
+  const [editingId, setEditingId] = useState(null);
   const fromOrders = salesOrders.filter((o) => o.status === "Paid").map((o) => ({
     id: o.id.replace("SO", "RCP"), party: clientById[o.client].name, date: o.date, amount: orderTotal(o), source: "Sales Order",
   }));
   const manual = manualReceipts.map((r) => ({ id: r.id, party: clientById[r.client]?.name || r.client, date: r.date, amount: r.amount, source: "Manual" }));
   const rows = [...fromOrders, ...manual];
+  const fields = [{ key: "client", label: "Client", type: "select", options: customers.map((c) => ({ value: c.id, label: c.name })) }, { key: "amount", label: "Amount", type: "money", default: 100 }];
+  const editingRow = manualReceipts.find((r) => r.id === editingId);
   return (
     <div>
       <SectionHeader title="Receipts" sub="Customer payments received — automatic from paid sales orders, or recorded manually." />
-      {canEdit && <AddForm
-        fields={[{ key: "client", label: "Client", type: "select", options: customers.map((c) => ({ value: c.id, label: c.name })) }, { key: "amount", label: "Amount", type: "money", default: 100 }]}
-        onSubmit={addManualReceipt} submitLabel="+ Record Receipt" />}
+      {editingRow ? (
+        <AddForm key={editingId} fields={fields} initialValues={editingRow}
+          onSubmit={(vals) => { updateManualReceipt(editingId, vals); setEditingId(null); }} submitLabel="Save Changes" />
+      ) : canEdit && (
+        <AddForm fields={fields} onSubmit={addManualReceipt} submitLabel="+ Record Receipt" />
+      )}
       <Table title="Receipts" columns={["Receipt", "Client", "Date", "Amount", "Source", ""]} rows={rows}
         renderRow={(r) => (<><Td mono>{r.id}</Td><Td>{r.party}</Td><Td mono>{r.date}</Td><Td mono>{money(r.amount)}</Td><Td><Pill>{r.source}</Pill></Td>
-          <Td>{canEdit && r.source === "Manual" && <Button variant="danger" onClick={() => deleteManualReceipt(r.id)}>Delete</Button>}</Td></>)} />
+          <Td>{isAdmin && r.source === "Manual" && <Button variant="ghost" onClick={() => setEditingId(r.id)}>Edit</Button>}{canEdit && r.source === "Manual" && <Button variant="danger" onClick={() => deleteManualReceipt(r.id)}>Delete</Button>}</Td></>)} />
       {rows.length === 0 && <div className="text-sm mt-4" style={{ color: "var(--text-secondary)" }}>No receipts yet.</div>}
     </div>
   );
 }
 function ApPaymentsPage() {
-  const { purchaseInvoices, expenses, supById, money, suppliers, manualPayments, addManualPayment, deleteManualPayment, canEdit } = useApp();
+  const { purchaseInvoices, expenses, supById, money, suppliers, manualPayments, addManualPayment, updateManualPayment, deleteManualPayment, canEdit, isAdmin } = useApp();
+  const [editingId, setEditingId] = useState(null);
   const rows = [
     ...purchaseInvoices.filter((p) => p.status === "Paid").map((p) => ({ id: p.id, payee: supById[p.supplier].name, date: p.date, amount: p.amount, type: "Supplier" })),
     ...expenses.filter((e) => e.status === "Paid").map((e) => ({ id: e.id, payee: e.employee, date: e.date, amount: e.amount, type: "Expense" })),
     ...manualPayments.map((p) => ({ id: p.id, payee: p.payee, date: p.date, amount: p.amount, type: "Manual" })),
   ];
+  const fields = [{ key: "payee", label: "Payee", type: "select", options: suppliers.map((s) => ({ value: s.name, label: s.name })) }, { key: "amount", label: "Amount", type: "money", default: 100 }];
+  const editingRow = manualPayments.find((p) => p.id === editingId);
   return (
     <div>
       <SectionHeader title="Payments" sub="Payments made to suppliers and reimbursed expenses — or recorded manually." />
-      {canEdit && <AddForm
-        fields={[{ key: "payee", label: "Payee", type: "select", options: suppliers.map((s) => ({ value: s.name, label: s.name })) }, { key: "amount", label: "Amount", type: "money", default: 100 }]}
-        onSubmit={addManualPayment} submitLabel="+ Record Payment" />}
+      {editingRow ? (
+        <AddForm key={editingId} fields={fields} initialValues={editingRow}
+          onSubmit={(vals) => { updateManualPayment(editingId, vals); setEditingId(null); }} submitLabel="Save Changes" />
+      ) : canEdit && (
+        <AddForm fields={fields} onSubmit={addManualPayment} submitLabel="+ Record Payment" />
+      )}
       <Table title="Payments" columns={["Ref", "Payee", "Type", "Date", "Amount", ""]} rows={rows}
         renderRow={(r) => (<><Td mono>{r.id}</Td><Td>{r.payee}</Td><Td><Pill>{r.type}</Pill></Td><Td mono>{r.date}</Td><Td mono>{money(r.amount)}</Td>
-          <Td>{canEdit && r.type === "Manual" && <Button variant="danger" onClick={() => deleteManualPayment(r.id)}>Delete</Button>}</Td></>)} />
+          <Td>{isAdmin && r.type === "Manual" && <Button variant="ghost" onClick={() => setEditingId(r.id)}>Edit</Button>}{canEdit && r.type === "Manual" && <Button variant="danger" onClick={() => deleteManualPayment(r.id)}>Delete</Button>}</Td></>)} />
     </div>
   );
 }
+function TaxesPage() {
+  const { taxRates, addTaxRate, updateTaxRate, deleteTaxRate, canEdit, isAdmin } = useApp();
+  const [editingId, setEditingId] = useState(null);
+  const fields = [
+    { key: "name", label: "Tax Name", default: "New Tax Rate" },
+    { key: "rate", label: "Rate %", type: "number", default: 5 },
+    { key: "type", label: "Type", type: "select", options: ["Sales Tax", "VAT", "Duty", "Withholding", "Other"] },
+    { key: "appliesTo", label: "Applies To", type: "select", options: ["Sales", "Purchases", "Both"] },
+  ];
+  const editingRow = taxRates.find((r) => r.id === editingId);
+  const activeCount = taxRates.filter((r) => r.isActive).length;
+  const avgRate = taxRates.length ? (taxRates.reduce((s, r) => s + r.rate, 0) / taxRates.length).toFixed(2) : "0.00";
+
+  return (
+    <div>
+      <SectionHeader title="Taxes" sub="Tax rates applied across sales and purchasing — configure once, reference everywhere." />
+
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        <Card title="Tax Rates Configured" value={String(taxRates.length)} />
+        <Card title="Active Rates" value={String(activeCount)} accent="#3F7D5C" />
+        <Card title="Average Rate" value={`${avgRate}%`} accent="#C08A2E" />
+      </div>
+
+      {editingRow ? (
+        <AddForm key={editingId} fields={fields} initialValues={editingRow}
+          onSubmit={(vals) => { updateTaxRate(editingId, vals); setEditingId(null); }} submitLabel="Save Changes" />
+      ) : canEdit && (
+        <AddForm fields={fields} onSubmit={addTaxRate} submitLabel="+ Add Tax Rate" />
+      )}
+
+      <Table title="Taxes" columns={["ID", "Tax Name", "Rate", "Type", "Applies To", "Status", ""]} rows={taxRates}
+        renderRow={(r) => (
+          <>
+            <Td mono>{r.id}</Td><Td>{r.name}</Td><Td mono>{r.rate.toFixed(2)}%</Td><Td>{r.type}</Td><Td>{r.appliesTo}</Td>
+            <Td><Pill>{r.isActive ? "Active" : "Inactive"}</Pill></Td>
+            <Td>
+              {canEdit && <Button variant="ghost" onClick={() => updateTaxRate(r.id, { isActive: !r.isActive })}>{r.isActive ? "Deactivate" : "Activate"}</Button>}
+              {isAdmin && <Button variant="ghost" onClick={() => setEditingId(r.id)}>Edit</Button>}
+              {isAdmin && <Button variant="danger" onClick={() => deleteTaxRate(r.id)}>Delete</Button>}
+            </Td>
+          </>
+        )} />
+      <div className="text-xs mt-3" style={{ color: "var(--text-label)" }}>
+        Tax rates are configured here for reference and reporting; applying them automatically to individual invoice line items is a natural next step once that's needed.
+      </div>
+    </div>
+  );
+}
+
 function FinReportsPage() {
   const { salesOrders, purchaseInvoices, expenses, payroll, orderTotal, money } = useApp();
   const revenue = salesOrders.filter((o) => ["Invoiced", "Paid"].includes(o.status)).reduce((s, o) => s + orderTotal(o), 0);
@@ -2415,21 +2714,29 @@ function FinReportsPage() {
    ================================================================ */
 
 function EmployeesPage() {
-  const { employees, branchById } = useApp();
+  const { employees, branchById, updateEmployee, isAdmin } = useApp();
+  const [editingId, setEditingId] = useState(null);
+  const editingRow = employees.find((e) => e.id === editingId);
+  const fields = [{ key: "name", label: "Name" }, { key: "role", label: "Role" }, { key: "department", label: "Department" }, { key: "branch", label: "Branch", type: "select", options: Object.values(branchById).map((b) => ({ value: b.id, label: b.name })) }, { key: "email", label: "Email" }, { key: "status", label: "Status", type: "select", options: ["Active", "On Leave", "Inactive"] }];
   return (
     <div>
       <SectionHeader title="Employees" sub="Factory and store staff." />
-      <Table title="Employees" columns={["ID", "Name", "Role", "Department", "Branch", "Email", "Hired", "Status"]} rows={employees}
-        renderRow={(e) => (<><Td mono>{e.id}</Td><Td>{e.name}</Td><Td>{e.role}</Td><Td>{e.department}</Td><Td>{branchById[e.branch].name}</Td><Td>{e.email}</Td><Td mono>{e.hired}</Td><Td><Pill>{e.status}</Pill></Td></>)} />
+      {editingRow && (
+        <AddForm key={editingId} fields={fields} initialValues={editingRow}
+          onSubmit={(vals) => { updateEmployee(editingId, vals); setEditingId(null); }} submitLabel="Save Changes" />
+      )}
+      <Table title="Employees" columns={["ID", "Name", "Role", "Department", "Branch", "Email", "Hired", "Status", ""]} rows={employees}
+        renderRow={(e) => (<><Td mono>{e.id}</Td><Td>{e.name}</Td><Td>{e.role}</Td><Td>{e.department}</Td><Td>{branchById[e.branch].name}</Td><Td>{e.email}</Td><Td mono>{e.hired}</Td><Td><Pill>{e.status}</Pill></Td>
+          <Td>{isAdmin && <Button variant="ghost" onClick={() => setEditingId(e.id)}>Edit</Button>}</Td></>)} />
     </div>
   );
 }
 function AttendancePage() {
-  const { attendance, employees, addAttendance, canEdit } = useApp();
+  const { attendance, employees, addAttendance, updateAttendance, deleteAttendance, canEdit } = useApp();
   return (
     <ListPage title="Attendance" sub="Daily attendance log." canEdit={canEdit}
       addFields={[{ key: "employee", label: "Employee", type: "select", options: employees.map((e) => e.name) }, { key: "date", label: "Date", type: "date", default: "2026-08-17" }, { key: "status", label: "Status", type: "select", options: ["Present", "Absent", "Late"] }]}
-      onAdd={addAttendance}
+      onAdd={addAttendance} onUpdate={updateAttendance} onDelete={canEdit ? deleteAttendance : undefined}
       columns={["ID", "Employee", "Date", "Status"]} rows={attendance}
       renderRow={(a) => (<><Td mono>{a.id}</Td><Td>{a.employee}</Td><Td mono>{a.date}</Td><Td><Pill>{a.status}</Pill></Td></>)} />
   );
@@ -2470,11 +2777,11 @@ function PayrollPage() {
   );
 }
 function RecruitmentPage() {
-  const { recruitment, addRecruit, canEdit } = useApp();
+  const { recruitment, addRecruit, updateRecruit, deleteRecruit, canEdit } = useApp();
   return (
     <ListPage title="Recruitment" sub="Open positions and candidate pipeline." canEdit={canEdit}
       addFields={[{ key: "position", label: "Position" }, { key: "department", label: "Department" }, { key: "candidate", label: "Candidate" }, { key: "stage", label: "Stage", type: "select", options: ["Applied", "Interview", "Offer", "Hired", "Rejected"] }]}
-      onAdd={addRecruit}
+      onAdd={addRecruit} onUpdate={updateRecruit} onDelete={canEdit ? deleteRecruit : undefined}
       columns={["ID", "Position", "Department", "Candidate", "Stage"]} rows={recruitment}
       renderRow={(r) => (<><Td mono>{r.id}</Td><Td>{r.position}</Td><Td>{r.department}</Td><Td>{r.candidate}</Td><Td><Pill>{r.stage}</Pill></Td></>)} />
   );
@@ -2485,11 +2792,17 @@ function RecruitmentPage() {
    ================================================================ */
 
 function ExpensesPage() {
-  const { expenses, employees, addExpense, setExpenseStatus, money, canEdit } = useApp();
+  const { expenses, employees, addExpense, updateExpense, setExpenseStatus, money, canEdit, isAdmin } = useApp();
+  const [editingId, setEditingId] = useState(null);
+  const fields = [{ key: "employee", label: "Employee", type: "select", options: employees.map((e) => e.name) }, { key: "category", label: "Category" }, { key: "amount", label: "Amount", type: "money", default: 100 }];
+  const editingRow = expenses.find((e) => e.id === editingId);
   return (
     <div>
       <SectionHeader title="Expenses" sub="Employee expense claims." />
-      {canEdit && <AddForm fields={[{ key: "employee", label: "Employee", type: "select", options: employees.map((e) => e.name) }, { key: "category", label: "Category" }, { key: "amount", label: "Amount", type: "money", default: 100 }]} onSubmit={addExpense} submitLabel="+ Submit Claim" />}
+      {editingRow ? (
+        <AddForm key={editingId} fields={fields} initialValues={editingRow}
+          onSubmit={(vals) => { updateExpense(editingId, vals); setEditingId(null); }} submitLabel="Save Changes" />
+      ) : canEdit && <AddForm fields={fields} onSubmit={addExpense} submitLabel="+ Submit Claim" />}
       <Table title="Expenses" columns={["ID", "Employee", "Category", "Amount", "Date", "Status", ""]} rows={expenses}
         renderRow={(e) => (
           <>
@@ -2497,6 +2810,7 @@ function ExpensesPage() {
             <Td>
               {canEdit && e.status === "Pending" && <><Button onClick={() => setExpenseStatus(e.id, "Approved")}>Approve</Button><Button variant="danger" onClick={() => setExpenseStatus(e.id, "Rejected")}>Reject</Button></>}
               {canEdit && e.status === "Approved" && <Button onClick={() => setExpenseStatus(e.id, "Paid")}>Mark Paid</Button>}
+              {isAdmin && <Button variant="ghost" onClick={() => setEditingId(e.id)}>Edit</Button>}
             </Td>
           </>
         )} />
@@ -2504,14 +2818,20 @@ function ExpensesPage() {
   );
 }
 function FixedAssetsPage() {
-  const { fixedAssets, addFixedAsset, deleteFixedAsset, money, canEdit } = useApp();
+  const { fixedAssets, addFixedAsset, updateFixedAsset, deleteFixedAsset, money, canEdit, isAdmin } = useApp();
   const today = new Date("2026-08-17");
+  const [editingId, setEditingId] = useState(null);
+  const fields = [{ key: "name", label: "Asset" }, { key: "category", label: "Category" }, { key: "purchaseDate", label: "Purchase Date", type: "date", default: "2026-08-17" }, { key: "cost", label: "Cost", type: "money", default: 5000 }, { key: "lifeYears", label: "Useful Life (yrs)", type: "number", default: 5 }];
+  const editingRow = fixedAssets.find((a) => a.id === editingId);
   return (
     <div>
       <SectionHeader title="Fixed Assets" sub="Asset register with straight-line depreciation." />
-      {canEdit && <AddForm
-        fields={[{ key: "name", label: "Asset" }, { key: "category", label: "Category" }, { key: "purchaseDate", label: "Purchase Date", type: "date", default: "2026-08-17" }, { key: "cost", label: "Cost", type: "money", default: 5000 }, { key: "lifeYears", label: "Useful Life (yrs)", type: "number", default: 5 }]}
-        onSubmit={addFixedAsset} submitLabel="+ Add Asset" />}
+      {editingRow ? (
+        <AddForm key={editingId} fields={fields} initialValues={editingRow}
+          onSubmit={(vals) => { updateFixedAsset(editingId, vals); setEditingId(null); }} submitLabel="Save Changes" />
+      ) : canEdit && (
+        <AddForm fields={fields} onSubmit={addFixedAsset} submitLabel="+ Add Asset" />
+      )}
       <Table title="Fixed Assets" columns={["ID", "Asset", "Category", "Purchase Date", "Cost", "Useful Life", "Book Value", ""]} rows={fixedAssets}
         renderRow={(a) => {
           const yrs = (today - new Date(a.purchaseDate)) / (365.25 * 24 * 3600 * 1000);
@@ -2519,18 +2839,32 @@ function FixedAssetsPage() {
           const accumulated = Math.min(a.cost, annualDep * Math.max(0, yrs));
           const book = Math.max(0, a.cost - accumulated);
           return (<><Td mono>{a.id}</Td><Td>{a.name}</Td><Td>{a.category}</Td><Td mono>{a.purchaseDate}</Td><Td mono>{money(a.cost)}</Td><Td mono>{a.lifeYears} yrs</Td><Td mono>{money(book)}</Td>
-            <Td>{canEdit && <Button variant="danger" onClick={() => deleteFixedAsset(a.id)}>Delete</Button>}</Td></>);
+            <Td>{isAdmin && <Button variant="ghost" onClick={() => setEditingId(a.id)}>Edit</Button>}{canEdit && <Button variant="danger" onClick={() => deleteFixedAsset(a.id)}>Delete</Button>}</Td></>);
         }} />
     </div>
   );
 }
 function ManufacturingPage() {
-  const { productionOrders, products, matById, canRunBatch, completeBatch, newBatch, canEdit } = useApp();
+  const { productionOrders, products, materials, matById, canRunBatch, completeBatch, newBatch, canEdit } = useApp();
   const [productId, setProductId] = useState(products[0].id);
   const [qty, setQty] = useState(100);
+
+  const activeBatches = productionOrders.filter((b) => b.status === "Planned");
+  const completedBatches = productionOrders.filter((b) => b.status === "Completed");
+  const atRiskBatches = activeBatches.filter((b) => !canRunBatch(products.find((p) => p.id === b.product), b.qty));
+  const unitsInProduction = activeBatches.reduce((s, b) => s + b.qty, 0);
+
   return (
     <div>
-      <SectionHeader title="Manufacturing" sub="Plan batches at the factory, track material consumption, and complete runs." />
+      <SectionHeader title="Production Orders" sub="Plan batches at the factory, track material consumption, and complete runs." />
+
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <Card title="Active Batches" value={String(activeBatches.length)} accent="#3A5C86" />
+        <Card title="Units In Production" value={unitsInProduction.toLocaleString()} />
+        <Card title="Completed Batches" value={String(completedBatches.length)} accent="#3F7D5C" />
+        <Card title="Batches At Risk" value={String(atRiskBatches.length)} sub={atRiskBatches.length ? "Short on materials" : "All clear"} accent={atRiskBatches.length ? "#A64B3A" : "#3F7D5C"} />
+      </div>
+
       {canEdit && (
         <div className="p-4 rounded-md mb-5 flex items-end gap-3" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
           <div><div className="text-[11px] uppercase tracking-wide mb-1" style={{ color: "var(--text-label)" }}>Product</div>
@@ -2560,52 +2894,176 @@ function ManufacturingPage() {
     </div>
   );
 }
+
+function WorkCentersPage() {
+  const { workCenters, addWorkCenter, updateWorkCenter, deleteWorkCenter, canEdit, isAdmin } = useApp();
+  const [editingId, setEditingId] = useState(null);
+  const fields = [
+    { key: "name", label: "Work Center" },
+    { key: "department", label: "Department", type: "select", options: ["Devices", "Linens", "Amenities"] },
+    { key: "capacityPerDay", label: "Capacity / Day", type: "number", default: 100 },
+    { key: "status", label: "Status", type: "select", options: ["Running", "Idle", "Maintenance"] },
+  ];
+  const editingRow = workCenters.find((w) => w.id === editingId);
+  return (
+    <div>
+      <SectionHeader title="Work Centers" sub="Production lines and stations on the factory floor, and what they're rated to handle." />
+      {editingRow ? (
+        <AddForm key={editingId} fields={fields} initialValues={editingRow}
+          onSubmit={(vals) => { updateWorkCenter(editingId, vals); setEditingId(null); }} submitLabel="Save Changes" />
+      ) : canEdit && <AddForm fields={fields} onSubmit={addWorkCenter} submitLabel="+ Add Work Center" />}
+      <Table title="Work Centers" columns={["ID", "Work Center", "Department", "Capacity / Day", "Status", ""]} rows={workCenters}
+        renderRow={(w) => (
+          <>
+            <Td mono>{w.id}</Td><Td>{w.name}</Td><Td>{w.department}</Td><Td mono>{w.capacityPerDay}/day</Td><Td><Pill>{w.status}</Pill></Td>
+            <Td>{isAdmin && <Button variant="ghost" onClick={() => setEditingId(w.id)}>Edit</Button>}{canEdit && <Button variant="danger" onClick={() => deleteWorkCenter(w.id)}>Delete</Button>}</Td>
+          </>
+        )} />
+    </div>
+  );
+}
+
+function QualityControlPage() {
+  const { qualityChecks, productionOrders, products, addQualityCheck, updateQualityCheck, deleteQualityCheck, canEdit, isAdmin } = useApp();
+  const [editingId, setEditingId] = useState(null);
+  const fields = [
+    { key: "batch", label: "Batch", type: "select", options: productionOrders.map((b) => ({ value: b.id, label: `${b.id} — ${products.find((p) => p.id === b.product)?.name}` })) },
+    { key: "product", label: "Product", type: "select", options: products.map((p) => ({ value: p.id, label: p.name })) },
+    { key: "inspector", label: "Inspector", default: "Aiko Tanaka" },
+    { key: "result", label: "Result", type: "select", options: ["Pending", "Pass", "Fail"] },
+    { key: "notes", label: "Notes", default: "" },
+  ];
+  const editingRow = qualityChecks.find((q) => q.id === editingId);
+  const passRate = qualityChecks.length ? Math.round((qualityChecks.filter((q) => q.result === "Pass").length / qualityChecks.filter((q) => q.result !== "Pending").length || 0) * 100) : 0;
+  return (
+    <div>
+      <SectionHeader title="Quality Control" sub="Inspection records for finished-goods batches, before they ship to hotel clients." />
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        <Card title="Inspections Logged" value={String(qualityChecks.length)} />
+        <Card title="Pass Rate" value={`${passRate}%`} accent={passRate >= 90 ? "#3F7D5C" : "#A64B3A"} />
+        <Card title="Pending Review" value={String(qualityChecks.filter((q) => q.result === "Pending").length)} accent="#8A6A2E" />
+      </div>
+      {editingRow ? (
+        <AddForm key={editingId} fields={fields} initialValues={editingRow}
+          onSubmit={(vals) => { updateQualityCheck(editingId, vals); setEditingId(null); }} submitLabel="Save Changes" />
+      ) : canEdit && <AddForm fields={fields} onSubmit={addQualityCheck} submitLabel="+ Log Inspection" />}
+      <Table title="Quality Control" columns={["ID", "Batch", "Product", "Inspector", "Date", "Result", "Notes", ""]} rows={qualityChecks}
+        renderRow={(q) => (
+          <>
+            <Td mono>{q.id}</Td><Td mono>{q.batch}</Td><Td>{products.find((p) => p.id === q.product)?.name}</Td><Td>{q.inspector}</Td><Td mono>{q.date}</Td>
+            <Td><Pill>{q.result}</Pill></Td><Td className="text-xs">{q.notes}</Td>
+            <Td>{isAdmin && <Button variant="ghost" onClick={() => setEditingId(q.id)}>Edit</Button>}{canEdit && <Button variant="danger" onClick={() => deleteQualityCheck(q.id)}>Delete</Button>}</Td>
+          </>
+        )} />
+    </div>
+  );
+}
+
+function MaintenancePage() {
+  const { maintenance, workCenters, addMaintenance, updateMaintenance, deleteMaintenance, logMaintenanceService, canEdit, isAdmin } = useApp();
+  const [editingId, setEditingId] = useState(null);
+  const fields = [
+    { key: "equipment", label: "Equipment" },
+    { key: "workCenter", label: "Work Center", type: "select", options: workCenters.map((w) => ({ value: w.id, label: w.name })) },
+    { key: "lastService", label: "Last Service", type: "date", default: "2026-08-17" },
+    { key: "nextDue", label: "Next Due", type: "date", default: "2026-11-17" },
+    { key: "technician", label: "Technician", default: "Diego Alvarez" },
+  ];
+  const editingRow = maintenance.find((m) => m.id === editingId);
+  const overdueCount = maintenance.filter((m) => m.status === "Overdue").length;
+  return (
+    <div>
+      <SectionHeader title="Maintenance" sub="Preventive maintenance schedule for factory equipment." />
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        <Card title="Equipment Tracked" value={String(maintenance.length)} />
+        <Card title="Due Soon" value={String(maintenance.filter((m) => m.status === "Due Soon").length)} accent="#8A6A2E" />
+        <Card title="Overdue" value={String(overdueCount)} accent={overdueCount ? "#A64B3A" : "#3F7D5C"} sub={overdueCount ? "Needs attention" : "All clear"} />
+      </div>
+      {editingRow ? (
+        <AddForm key={editingId} fields={fields} initialValues={editingRow}
+          onSubmit={(vals) => { updateMaintenance(editingId, { ...vals, status: "Up to Date" }); setEditingId(null); }} submitLabel="Save Changes" />
+      ) : canEdit && <AddForm fields={fields} onSubmit={(vals) => addMaintenance({ ...vals, status: "Up to Date" })} submitLabel="+ Add Equipment" />}
+      <Table title="Maintenance" columns={["ID", "Equipment", "Work Center", "Last Service", "Next Due", "Technician", "Status", ""]} rows={maintenance}
+        renderRow={(m) => (
+          <>
+            <Td mono>{m.id}</Td><Td>{m.equipment}</Td><Td>{workCenters.find((w) => w.id === m.workCenter)?.name}</Td>
+            <Td mono>{m.lastService}</Td><Td mono>{m.nextDue}</Td><Td>{m.technician}</Td><Td><Pill>{m.status}</Pill></Td>
+            <Td>
+              {canEdit && m.status !== "Up to Date" && <Button variant="accent" onClick={() => logMaintenanceService(m.id)}>Log Service</Button>}
+              {isAdmin && <Button variant="ghost" onClick={() => setEditingId(m.id)}>Edit</Button>}
+              {canEdit && <Button variant="danger" onClick={() => deleteMaintenance(m.id)}>Delete</Button>}
+            </Td>
+          </>
+        )} />
+    </div>
+  );
+}
+
 function ProjectsPage() {
-  const { projects, addProject, money, canEdit } = useApp();
+  const { projects, addProject, updateProject, money, canEdit, isAdmin } = useApp();
+  const [editingId, setEditingId] = useState(null);
+  const fields = [{ key: "name", label: "Project" }, { key: "client", label: "Client", default: "Internal" }, { key: "manager", label: "Manager" }, { key: "status", label: "Status", type: "select", options: ["Planning", "In Progress", "On Hold", "Completed"] }, { key: "budget", label: "Budget", type: "money", default: 10000 }];
+  const editingRow = projects.find((p) => p.id === editingId);
   return (
     <div>
       <SectionHeader title="Projects" sub="Internal and client-facing initiatives." />
-      {canEdit && <AddForm fields={[{ key: "name", label: "Project" }, { key: "client", label: "Client", default: "Internal" }, { key: "manager", label: "Manager" }, { key: "status", label: "Status", type: "select", options: ["Planning", "In Progress", "On Hold", "Completed"] }, { key: "budget", label: "Budget", type: "money", default: 10000 }]} onSubmit={addProject} submitLabel="+ New Project" />}
-      <Table title="Projects" columns={["ID", "Project", "Client", "Manager", "Status", "Budget", "Progress"]} rows={projects}
+      {editingRow ? (
+        <AddForm key={editingId} fields={fields} initialValues={editingRow}
+          onSubmit={(vals) => { updateProject(editingId, vals); setEditingId(null); }} submitLabel="Save Changes" />
+      ) : canEdit && <AddForm fields={fields} onSubmit={addProject} submitLabel="+ New Project" />}
+      <Table title="Projects" columns={["ID", "Project", "Client", "Manager", "Status", "Budget", "Progress", ""]} rows={projects}
         renderRow={(p) => (
           <>
             <Td mono>{p.id}</Td><Td>{p.name}</Td><Td>{p.client}</Td><Td>{p.manager}</Td><Td><Pill>{p.status}</Pill></Td><Td mono>{money(p.budget)}</Td>
             <Td><div className="w-24 h-2 rounded-full" style={{ background: "var(--border)" }}><div className="h-2 rounded-full" style={{ width: `${p.percent}%`, background: "#C08A2E" }} /></div></Td>
+            <Td>{isAdmin && <Button variant="ghost" onClick={() => setEditingId(p.id)}>Edit</Button>}</Td>
           </>
         )} />
     </div>
   );
 }
 function ServicePage() {
-  const { service, clientById, addService, advanceService, customers, canEdit } = useApp();
+  const { service, clientById, addService, updateServiceTicket, advanceService, customers, canEdit, isAdmin } = useApp();
   const NEXT = { Open: "Start Work", "In Progress": "Mark Resolved" };
+  const [editingId, setEditingId] = useState(null);
+  const fields = [{ key: "client", label: "Client", type: "select", options: customers.map((c) => ({ value: c.id, label: c.name })) }, { key: "issue", label: "Issue" }, { key: "priority", label: "Priority", type: "select", options: ["Low", "Medium", "High"] }, { key: "assignedTo", label: "Assigned To", default: "Priya Nair" }];
+  const editingRow = service.find((s) => s.id === editingId);
   return (
     <div>
       <SectionHeader title="Service" sub="Post-sale support tickets from hotel clients." />
-      {canEdit && <AddForm fields={[{ key: "client", label: "Client", type: "select", options: customers.map((c) => ({ value: c.id, label: c.name })) }, { key: "issue", label: "Issue" }, { key: "priority", label: "Priority", type: "select", options: ["Low", "Medium", "High"] }, { key: "assignedTo", label: "Assigned To", default: "Priya Nair" }]} onSubmit={addService} submitLabel="+ New Ticket" />}
+      {editingRow ? (
+        <AddForm key={editingId} fields={fields} initialValues={editingRow}
+          onSubmit={(vals) => { updateServiceTicket(editingId, vals); setEditingId(null); }} submitLabel="Save Changes" />
+      ) : canEdit && <AddForm fields={fields} onSubmit={addService} submitLabel="+ New Ticket" />}
       <Table title="Service" columns={["Ticket", "Client", "Issue", "Priority", "Assigned To", "Date", "Status", ""]} rows={service}
         renderRow={(s) => (
           <>
             <Td mono>{s.id}</Td><Td>{clientById[s.client]?.name || s.client}</Td><Td>{s.issue}</Td><Td><Pill>{s.priority}</Pill></Td><Td>{s.assignedTo}</Td><Td mono>{s.date}</Td>
             <Td><Pill>{s.status}</Pill></Td>
-            <Td>{canEdit && NEXT[s.status] && <Button onClick={() => advanceService(s.id)}>{NEXT[s.status]}</Button>}</Td>
+            <Td>{canEdit && NEXT[s.status] && <Button onClick={() => advanceService(s.id)}>{NEXT[s.status]}</Button>}{isAdmin && <Button variant="ghost" onClick={() => setEditingId(s.id)}>Edit</Button>}</Td>
           </>
         )} />
     </div>
   );
 }
 function DocumentsPage() {
-  const { documents, addDocument, deleteDocument, canEdit } = useApp();
+  const { documents, addDocument, updateDocument, deleteDocument, canEdit, isAdmin } = useApp();
+  const [editingId, setEditingId] = useState(null);
+  const fields = [{ key: "name", label: "File Name", default: "New Contract.pdf" }, { key: "module", label: "Module", type: "select", options: ["Sales", "Purchasing", "HR", "Accounting", "Legal", "Other"] }, { key: "type", label: "Type", type: "select", options: ["Contract", "Report", "Compliance", "Other"] }];
+  const editingRow = documents.find((d) => d.id === editingId);
   return (
     <div>
       <SectionHeader title="Documents" sub="Contracts, reports, and compliance records." />
-      {canEdit && <AddForm
-        fields={[{ key: "name", label: "File Name", default: "New Contract.pdf" }, { key: "module", label: "Module", type: "select", options: ["Sales", "Purchasing", "HR", "Accounting", "Legal", "Other"] }, { key: "type", label: "Type", type: "select", options: ["Contract", "Report", "Compliance", "Other"] }]}
-        onSubmit={addDocument} submitLabel="+ Add Document" />}
+      {editingRow ? (
+        <AddForm key={editingId} fields={fields} initialValues={editingRow}
+          onSubmit={(vals) => { updateDocument(editingId, vals); setEditingId(null); }} submitLabel="Save Changes" />
+      ) : canEdit && (
+        <AddForm fields={fields} onSubmit={addDocument} submitLabel="+ Add Document" />
+      )}
       <div className="text-xs mb-3" style={{ color: "var(--text-label)" }}>This records the document's details — actual file storage isn't wired up in this prototype yet, so no file bytes are uploaded.</div>
       <Table title="Documents" columns={["ID", "Document", "Module", "Type", "Uploaded By", "Date", ""]} rows={documents}
         renderRow={(d) => (<><Td mono>{d.id}</Td><Td>{d.name}</Td><Td>{d.module}</Td><Td>{d.type}</Td><Td>{d.uploadedBy}</Td><Td mono>{d.date}</Td>
-          <Td>{canEdit && <Button variant="danger" onClick={() => deleteDocument(d.id)}>Delete</Button>}</Td></>)} />
+          <Td>{isAdmin && <Button variant="ghost" onClick={() => setEditingId(d.id)}>Edit</Button>}{canEdit && <Button variant="danger" onClick={() => deleteDocument(d.id)}>Delete</Button>}</Td></>)} />
     </div>
   );
 }
