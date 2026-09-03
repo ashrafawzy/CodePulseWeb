@@ -29,6 +29,15 @@ export default defineConfig({
         // is in-memory only (or fetched from your API in the -db variant),
         // so this caches the UI, not live business data.
         globPatterns: ["**/*.{js,css,html,png,svg,woff2}"],
+        // Without these, a new service worker installs after each deploy
+        // but stays in the browser's "waiting" state until every open tab
+        // of the app is fully closed — so a reload alone can still show
+        // stale content days after a real update shipped. This is what
+        // caused the Manufacturing menu to look missing even though it
+        // was already in the deployed code. skipWaiting + clientsClaim
+        // make a new deployment take over immediately instead.
+        skipWaiting: true,
+        clientsClaim: true,
       },
     }),
   ],

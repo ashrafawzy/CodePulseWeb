@@ -1,6 +1,10 @@
-import React, { useState, useMemo, useContext, createContext, useRef } from "react";
+import React, { useState, useMemo, useContext, createContext, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
+import { QRCodeSVG } from "qrcode.react";
+import { Html5Qrcode } from "html5-qrcode";
+import { signInWithEmailAndPassword, signOut as firebaseSignOut, onAuthStateChanged } from "firebase/auth";
 import { useFirestoreCollection } from "./useFirestoreCollection";
+import { auth } from "./firebase";
 import {
   uid, todayStr, receivePurchaseOrder, completeProductionBatch, transferProductStock,
   deliverSalesOrder, restockReturn, convertPurchaseRequestToOrder, convertQuotationToOrder,
@@ -55,13 +59,13 @@ const THEME_TOKENS = {
 
 /* ---------------- Currencies ---------------- */
 const seedCurrencies = [
-  { code: "USD", rate: 1 },
-  { code: "EUR", rate: 0.92 },
-  { code: "GBP", rate: 0.79 },
-  { code: "AED", rate: 3.67 },
-  { code: "INR", rate: 83.1 },
-  { code: "JPY", rate: 149 },
-  { code: "EGP", rate: 49.5 }, // approximate — EGP has moved a lot; update the rate in Settings → Currencies
+  { id: "USD", code: "USD", rate: 1 },
+  { id: "EUR", code: "EUR", rate: 0.92 },
+  { id: "GBP", code: "GBP", rate: 0.79 },
+  { id: "AED", code: "AED", rate: 3.67 },
+  { id: "INR", code: "INR", rate: 83.1 },
+  { id: "JPY", code: "JPY", rate: 149 },
+  { id: "EGP", code: "EGP", rate: 49.5 }, // approximate — EGP has moved a lot; update the rate in Settings → Currencies
 ];
 function formatMoney(amountUSD, code, rates) {
   const rate = rates?.[code] ?? 1;
@@ -72,7 +76,6 @@ function formatMoney(amountUSD, code, rates) {
 /* ---------------- Translations ---------------- */
 const LANGUAGES = [
   { code: "en", label: "English" },
-  { code: "es", label: "Español" },
   { code: "ar", label: "العربية" },
 ];
 const I18N = {
@@ -830,6 +833,13 @@ const I18N = {
   "Enterprise Console": "لوحة التحكم المؤسسية",
   "Enterprise Console — Sign In": "لوحة التحكم المؤسسية — تسجيل الدخول",
   "Password (demo — any value works)": "كلمة المرور (تجريبي — أي قيمة تعمل)",
+  "Password": "كلمة المرور",
+  "Enter your username and password.": "أدخل اسم المستخدم وكلمة المرور.",
+  "Incorrect username or password.": "اسم المستخدم أو كلمة المرور غير صحيحة.",
+  "Too many attempts — wait a moment and try again.": "محاولات كثيرة جدًا — انتظر لحظة وحاول مرة أخرى.",
+  "Network error — check your connection and try again.": "خطأ في الشبكة — تحقق من اتصالك وحاول مرة أخرى.",
+  "Signing in…": "جارٍ تسجيل الدخول…",
+  "Loading…": "جارٍ التحميل…",
   "Sign In": "تسجيل الدخول",
   "Sign Out": "تسجيل الخروج",
   "Modules and actions adapt to the signed-in role — Viewer is read-only everywhere.": "تتكيّف الوحدات والإجراءات مع الدور المسجَّل — دور \"مشاهد\" للقراءة فقط في كل مكان.",
@@ -845,6 +855,15 @@ const I18N = {
   "Sales Manager": "مدير المبيعات",
   "Accountant": "محاسب",
   "Viewer": "مشاهد",
+  "Scan": "مسح",
+  "Scan Item": "مسح الصنف",
+  "Show QR": "عرض QR",
+  "Close": "إغلاق",
+  "Point the camera at an item QR code": "وجّه الكاميرا نحو رمز QR الخاص بالصنف",
+  "No camera permission — enable it in your browser settings to scan.": "لا يوجد إذن للكاميرا — فعّله من إعدادات المتصفح لاستخدام المسح.",
+  "Scanned code doesn't match any known item.": "الرمز الممسوح لا يطابق أي صنف معروف.",
+  "Print or save this code and attach it to the item — scanning it anywhere in the app fills in this exact item.":
+    "اطبع هذا الرمز أو احفظه والصقه على الصنف — مسحه في أي مكان بالتطبيق يحدّد هذا الصنف بالضبط.",
   },
 };
 
@@ -859,7 +878,7 @@ const BRANCHES = [
 
 /* ---------------- Users & Roles ---------------- */
 const seedUsers = [
-  { id: "u1", name: "Sam Rivera", role: "Admin", username: "admin" },
+  { id: "u1", name: "CodePulse", role: "Admin", username: "admin" },
   { id: "u2", name: "Priya Nair", role: "Factory Manager", username: "factory" },
   { id: "u3", name: "Jordan Blake", role: "Sales Manager", username: "sales" },
   { id: "u4", name: "Casey Wu", role: "Accountant", username: "finance" },
@@ -1055,17 +1074,17 @@ const seedTaxRates = [
 ];
 
 const seedCoA = [
-  { code: "1000", name: "Cash", type: "Asset" },
-  { code: "1010", name: "Bank - Operating", type: "Asset" },
-  { code: "1200", name: "Accounts Receivable", type: "Asset" },
-  { code: "1400", name: "Inventory", type: "Asset" },
-  { code: "1600", name: "Fixed Assets", type: "Asset" },
-  { code: "2000", name: "Accounts Payable", type: "Liability" },
-  { code: "3000", name: "Owner's Equity", type: "Equity" },
-  { code: "4000", name: "Sales Revenue", type: "Revenue" },
-  { code: "5000", name: "Cost of Goods Sold", type: "Expense" },
-  { code: "5100", name: "Payroll Expense", type: "Expense" },
-  { code: "5200", name: "Operating Expenses", type: "Expense" },
+  { id: "1000", code: "1000", name: "Cash", type: "Asset" },
+  { id: "1010", code: "1010", name: "Bank - Operating", type: "Asset" },
+  { id: "1200", code: "1200", name: "Accounts Receivable", type: "Asset" },
+  { id: "1400", code: "1400", name: "Inventory", type: "Asset" },
+  { id: "1600", code: "1600", name: "Fixed Assets", type: "Asset" },
+  { id: "2000", code: "2000", name: "Accounts Payable", type: "Liability" },
+  { id: "3000", code: "3000", name: "Owner's Equity", type: "Equity" },
+  { id: "4000", code: "4000", name: "Sales Revenue", type: "Revenue" },
+  { id: "5000", code: "5000", name: "Cost of Goods Sold", type: "Expense" },
+  { id: "5100", code: "5100", name: "Payroll Expense", type: "Expense" },
+  { id: "5200", code: "5200", name: "Operating Expenses", type: "Expense" },
 ];
 
 const seedJournal = [
@@ -1138,7 +1157,7 @@ const seedService = [
 ];
 
 const seedDocuments = [
-  { id: "DOC-0001", name: "Supplier Agreement - Millhaven Textiles.pdf", module: "Purchasing", type: "Contract", uploadedBy: "Sam Rivera", date: "2026-02-10" },
+  { id: "DOC-0001", name: "Supplier Agreement - Millhaven Textiles.pdf", module: "Purchasing", type: "Contract", uploadedBy: "CodePulse", date: "2026-02-10" },
   { id: "DOC-0002", name: "Q2 Financial Statement.xlsx", module: "Accounting", type: "Report", uploadedBy: "Casey Wu", date: "2026-07-05" },
   { id: "DOC-0003", name: "Fire Safety Certificate.pdf", module: "HR", type: "Compliance", uploadedBy: "Priya Nair", date: "2026-01-20" },
   { id: "DOC-0004", name: "Grand Meridian Hotel MSA.pdf", module: "Sales", type: "Contract", uploadedBy: "Jordan Blake", date: "2025-11-01" },
@@ -1380,6 +1399,124 @@ function SectionHeader({ title, sub }) {
   );
 }
 
+/* Shows a printable QR code encoding a single item's id (raw material or
+   finished product). The QR payload is just the item id string, e.g.
+   "RM-001" — no barcode standard (EAN/UPC) involved since these are
+   internally generated labels, not manufacturer barcodes. Matches exactly
+   what BarcodeScannerModal expects to read back. */
+function QrLabelModal({ itemId, itemName, onClose }) {
+  const { t } = useApp();
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }} onClick={onClose}>
+      <div className="p-6 rounded-md text-center" style={{ background: "var(--surface)", maxWidth: 320 }} onClick={(e) => e.stopPropagation()}>
+        <div className="text-sm font-semibold mb-1" style={{ color: "var(--heading)" }}>{itemName}</div>
+        <div className="text-xs font-mono mb-4" style={{ color: "var(--text-secondary)" }}>{itemId}</div>
+        <div className="p-4 bg-white inline-block rounded-sm">
+          <QRCodeSVG value={itemId} size={180} />
+        </div>
+        <p className="text-xs mt-4" style={{ color: "var(--text-secondary)" }}>
+          {t("Print or save this code and attach it to the item — scanning it anywhere in the app fills in this exact item.")}
+        </p>
+        <div className="mt-4"><Button variant="ghost" onClick={onClose}>Close</Button></div>
+      </div>
+    </div>
+  );
+}
+
+/* Opens the device camera and reads a QR/barcode via html5-qrcode.
+   Calls onScan(decodedText) on the first successful read, then stops the
+   camera automatically — callers are responsible for validating the
+   scanned text against known item ids. */
+function BarcodeScannerModal({ onScan, onClose }) {
+  const { t } = useApp();
+  const [error, setError] = useState(null);
+  const scannerRef = useRef(null);
+  const containerId = useRef(`qr-reader-${Math.random().toString(36).slice(2)}`).current;
+
+  useEffect(() => {
+    const html5QrCode = new Html5Qrcode(containerId);
+    scannerRef.current = html5QrCode;
+    html5QrCode
+      .start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: 220 },
+        (decodedText) => {
+          onScan(decodedText);
+        },
+        () => {
+          // Per-frame "no code found yet" callback — expected constantly while
+          // aiming the camera, not a real error. Intentionally ignored.
+        }
+      )
+      .catch(() => setError(t("No camera permission — enable it in your browser settings to scan.")));
+
+    return () => {
+      // html5-qrcode's stop() rejects if start() never actually got the
+      // camera (e.g. permission denied) — swallow that specific case since
+      // there's nothing to clean up, but don't hide other unexpected errors.
+      if (scannerRef.current) {
+        scannerRef.current.stop().then(() => scannerRef.current.clear()).catch(() => {});
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.75)" }}>
+      <div className="p-4 rounded-md" style={{ background: "var(--surface)", width: 340 }}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm font-semibold" style={{ color: "var(--heading)" }}>{t("Scan Item")}</div>
+          <button onClick={onClose} className="text-xs" style={{ color: "var(--text-secondary)" }}>{t("Close")}</button>
+        </div>
+        {error ? (
+          <div className="text-sm p-3 rounded-sm" style={{ color: "#A64B3A", background: "#A64B3A11" }}>{error}</div>
+        ) : (
+          <div id={containerId} style={{ width: "100%" }} />
+        )}
+        <p className="text-xs mt-3 text-center" style={{ color: "var(--text-secondary)" }}>{t("Point the camera at an item QR code")}</p>
+      </div>
+    </div>
+  );
+}
+
+/* Small reusable "scan" icon button paired with an item picker — opens
+   BarcodeScannerModal, validates the scanned id against validIds, and
+   calls onValid(id) only for a real match so a mis-scanned or unrelated
+   QR code can't silently select nothing or feed a bad id downstream. */
+function ScanButton({ validIds, onValid }) {
+  const { t } = useApp();
+  const [scanning, setScanning] = useState(false);
+  const [toast, setToast] = useState(null);
+  return (
+    <>
+      <button type="button" onClick={() => setScanning(true)}
+        className="px-2 py-1.5 rounded-sm text-xs border ml-1" title={t("Scan")}
+        style={{ borderColor: "var(--border-strong)", color: "var(--text)" }}>
+        📷
+      </button>
+      {scanning && (
+        <BarcodeScannerModal
+          onClose={() => setScanning(false)}
+          onScan={(code) => {
+            setScanning(false);
+            if (validIds.has(code)) {
+              onValid(code);
+            } else {
+              setToast(t("Scanned code doesn't match any known item."));
+              setTimeout(() => setToast(null), 3000);
+            }
+          }}
+        />
+      )}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-sm text-sm text-white" style={{ background: "#A64B3A" }}>
+          {toast}
+        </div>
+      )}
+    </>
+  );
+}
+
 /* Generic inline add-form driven by a field config array.
    Fields of type "money" render an amount input plus a currency picker;
    the entered amount is converted to USD (the system's storage currency) on submit. */
@@ -1394,7 +1531,7 @@ function AddForm({ fields, onSubmit, submitLabel = "+ Add", initialValues }) {
       }
       return [f.key, { amount: f.default ?? 0, currency: globalCurrency }];
     }
-    return [f.key, existing ?? f.default ?? (f.type === "number" ? 0 : (f.options ? (f.options[0].value ?? f.options[0]) : ""))];
+    return [f.key, existing ?? f.default ?? (f.type === "number" ? 0 : (f.options ? (f.options[0]?.value ?? f.options[0] ?? "") : ""))];
   }));
   const [vals, setVals] = useState(initial);
   const set = (k, v) => setVals((old) => ({ ...old, [k]: v }));
@@ -1412,9 +1549,17 @@ function AddForm({ fields, onSubmit, submitLabel = "+ Add", initialValues }) {
         <div key={f.key}>
           <div className="text-[11px] uppercase tracking-wide mb-1" style={{ color: "var(--text-label)" }}>{t(f.label)}</div>
           {f.type === "select" ? (
-            <select value={vals[f.key]} onChange={(e) => set(f.key, e.target.value)} className="text-sm px-2 py-1.5 rounded-sm" style={{ border: "1px solid var(--border-strong)" }}>
-              {f.options.map((o) => <option key={o.value ?? o} value={o.value ?? o}>{t(o.label ?? o)}</option>)}
-            </select>
+            <div className="flex items-center">
+              <select value={vals[f.key]} onChange={(e) => set(f.key, e.target.value)} className="text-sm px-2 py-1.5 rounded-sm" style={{ border: "1px solid var(--border-strong)" }}>
+                {f.options.map((o) => <option key={o.value ?? o} value={o.value ?? o}>{t(o.label ?? o)}</option>)}
+              </select>
+              {f.scannable && (
+                <ScanButton
+                  validIds={new Set(f.options.map((o) => (o.value ?? o).toString()))}
+                  onValid={(id) => set(f.key, id)}
+                />
+              )}
+            </div>
           ) : f.type === "money" ? (
             <div className="flex items-center gap-1">
               <input type="number" value={vals[f.key].amount} onChange={(e) => setMoney(f.key, { amount: +e.target.value })}
@@ -1475,10 +1620,49 @@ const useApp = () => useContext(Ctx);
 
 /* ---------------- Login screen ---------------- */
 
-function Login({ onLogin, lang, setLang, t, users }) {
-  const [selected, setSelected] = useState(users[0].id);
+/* Real Firebase Authentication — username maps to "<username>@codepulse.local"
+   internally (Firebase Auth requires an email-shaped identifier, but there's
+   no reason to expose that to the person typing). After a successful sign-in,
+   we look up the matching Firestore "users" document by its username field
+   to get the role/name — Firebase Auth itself only proves *who* logged in,
+   Firestore still owns *what they can do*. */
+function usernameToEmail(username) {
+  return `${username.trim().toLowerCase()}@codepulse.local`;
+}
+
+function Login({ lang, setLang, t, users }) {
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
   const dir = lang === "ar" ? "rtl" : "ltr";
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!username.trim() || !password) {
+      setError(t("Enter your username and password."));
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      await signInWithEmailAndPassword(auth, usernameToEmail(username), password);
+      // onAuthStateChanged in the root App component picks up the signed-in
+      // user and matches it to a Firestore role — nothing else to do here.
+    } catch (err) {
+      const messages = {
+        "auth/invalid-credential": t("Incorrect username or password."),
+        "auth/user-not-found": t("Incorrect username or password."),
+        "auth/wrong-password": t("Incorrect username or password."),
+        "auth/too-many-requests": t("Too many attempts — wait a moment and try again."),
+        "auth/network-request-failed": t("Network error — check your connection and try again."),
+      };
+      setError(messages[err.code] || err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div dir={dir} className="w-full min-h-[700px] flex items-center justify-center" style={{ background: "#1B2421", fontFamily: "'Inter', system-ui, sans-serif" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');`}</style>
@@ -1493,23 +1677,20 @@ function Login({ onLogin, lang, setLang, t, users }) {
           </select>
         </div>
         <div className="text-[11px] uppercase tracking-widest mb-6" style={{ color: "#C08A2E" }}>{t("Enterprise Console — Sign In")}</div>
-        <div className="text-[11px] uppercase tracking-wide mb-1.5" style={{ color: "#8A8578" }}>{t("Account")}</div>
-        <div className="space-y-1.5 mb-4">
-          {users.map((u) => (
-            <button key={u.id} onClick={() => setSelected(u.id)}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-sm text-left text-sm"
-              style={{ background: selected === u.id ? "#1B2421" : "#FFFFFF", color: selected === u.id ? "#F3EFE6" : "#23271F", border: "1px solid #E4E0D4" }}>
-              <span>{u.name}</span>
-              <span className="text-[10px] font-mono uppercase" style={{ color: selected === u.id ? "#C08A2E" : "#8A8578" }}>{t(u.role)}</span>
-            </button>
-          ))}
-        </div>
-        <div className="text-[11px] uppercase tracking-wide mb-1.5" style={{ color: "#8A8578" }}>{t("Password (demo — any value works)")}</div>
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••"
-          className="w-full text-sm px-3 py-2 rounded-sm mb-5" style={{ border: "1px solid #C7C2B2", background: "#FFFFFF" }} />
-        <button onClick={() => onLogin(users.find((u) => u.id === selected))}
-          className="px-3 py-1.5 rounded-sm text-xs font-semibold uppercase tracking-wide"
-          style={{ background: "#C08A2E", color: "#1B2421", border: "1px solid #C08A2E" }}>{t("Sign In")}</button>
+        <form onSubmit={handleSubmit}>
+          <div className="text-[11px] uppercase tracking-wide mb-1.5" style={{ color: "#8A8578" }}>{t("Username")}</div>
+          <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoFocus
+            className="w-full text-sm px-3 py-2 rounded-sm mb-4" style={{ border: "1px solid #C7C2B2", background: "#FFFFFF" }} />
+          <div className="text-[11px] uppercase tracking-wide mb-1.5" style={{ color: "#8A8578" }}>{t("Password")}</div>
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password"
+            className="w-full text-sm px-3 py-2 rounded-sm mb-2" style={{ border: "1px solid #C7C2B2", background: "#FFFFFF" }} />
+          {error && <div className="text-xs mb-3" style={{ color: "#A64B3A" }}>{error}</div>}
+          <button type="submit" disabled={loading}
+            className="px-3 py-1.5 rounded-sm text-xs font-semibold uppercase tracking-wide mt-3"
+            style={{ background: "#C08A2E", color: "#1B2421", border: "1px solid #C08A2E", opacity: loading ? 0.6 : 1 }}>
+            {loading ? t("Signing in…") : t("Sign In")}
+          </button>
+        </form>
         <div className="text-[11px] mt-4" style={{ color: "#8A8578" }}>{t("Modules and actions adapt to the signed-in role — Viewer is read-only everywhere.")}</div>
       </div>
     </div>
@@ -1535,6 +1716,29 @@ export default function App() {
   // language, theme, the signed-in user) intentionally stays local — there's
   // no reason someone else's currency display preference should sync to you.
   const usersCol = useFirestoreCollection("users", seedUsers);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  // Firebase Auth proves *who* signed in; the matching Firestore "users"
+  // document (found by comparing the auth email's local-part to each
+  // document's username field) supplies *what they can do*. Runs whenever
+  // either the auth state or the users list changes, so a role edited in
+  // Users & Permissions takes effect without requiring a fresh sign-in.
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (fbUser) => {
+      if (!fbUser || !fbUser.email) {
+        setUser(null);
+        setAuthChecked(true);
+        return;
+      }
+      const username = fbUser.email.split("@")[0];
+      const matched = usersCol.data.find((u) => u.username?.toLowerCase() === username);
+      setUser(matched || null);
+      setAuthChecked(true);
+    });
+    return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usersCol.data]);
+
   const materialsCol = useFirestoreCollection("materials", seedMaterials);
   const productsCol = useFirestoreCollection("products", seedProducts);
   const customersCol = useFirestoreCollection("customers", seedCustomers);
@@ -1632,7 +1836,7 @@ export default function App() {
   function payPurchaseInvoice(id) { purchaseInvoicesCol.update(id, { status: "Paid" }); }
 
   /* ---- Actions: Manufacturing ---- */
-  function canRunBatch(product, qty) { return product.bom.every((b) => matById[b.id].stock >= b.qty * qty); }
+  function canRunBatch(product, qty) { return product.bom.every((b) => matById[b.id]?.stock >= b.qty * qty); }
   function completeBatch(id) {
     const batch = productionOrders.find((p) => p.id === id);
     const product = prodById[batch.product];
@@ -1662,7 +1866,7 @@ export default function App() {
   }
   function addStockCount(vals) {
     const isMaterial = vals.itemId.startsWith("RM");
-    const systemQty = isMaterial ? (vals.warehouse === "BR-HQ" ? matById[vals.itemId].stock : 0) : prodById[vals.itemId].stockByBranch[vals.warehouse];
+    const systemQty = isMaterial ? (vals.warehouse === "BR-HQ" ? matById[vals.itemId]?.stock : 0) : prodById[vals.itemId]?.stockByBranch[vals.warehouse];
     stockCountsCol.add({ warehouse: vals.warehouse, item: vals.itemId, systemQty, countedQty: vals.countedQty, date: todayStr(), status: "Completed" }, uid("SC"));
   }
 
@@ -1847,7 +2051,14 @@ export default function App() {
     );
   }
 
-  if (!user) return <Login onLogin={setUser} lang={lang} setLang={setLang} t={t} users={users} />;
+  if (!authChecked) {
+    return (
+      <div className="w-full min-h-[700px] flex items-center justify-center" style={{ background: "#1B2421" }}>
+        <div style={{ color: "#F3EFE6", fontSize: 13 }}>{t("Loading…")}</div>
+      </div>
+    );
+  }
+  if (!user) return <Login lang={lang} setLang={setLang} t={t} users={users} />;
 
   const allowedModules = MODULES.filter((m) => MODULE_ACCESS[m.id].includes(role));
   const activeModule = allowedModules.find((m) => m.id === selectedModule) ? selectedModule : allowedModules[0].id;
@@ -1930,7 +2141,7 @@ export default function App() {
                   <option value="dark">{t("Dark")}</option>
                 </select>
               </div>
-              <Button variant="ghost" onClick={() => setUser(null)}>Sign Out</Button>
+              <Button variant="ghost" onClick={() => firebaseSignOut(auth)}>Sign Out</Button>
             </div>
           </div>
           <div className="flex-1 p-6 overflow-y-auto">
@@ -2100,7 +2311,7 @@ function CustomersPage() {
         renderRow={(c) => {
           const orders = salesOrders.filter((o) => o.client === c.id);
           const value = orders.reduce((s, o) => s + orderTotal(o), 0);
-          return (<><Td mono>{c.id}</Td><Td>{c.name}</Td><Td>{c.location}</Td><Td>{branchById[c.branch].name}</Td><Td>{c.contact}</Td><Td mono>{orders.length}</Td><Td mono>{money(value)}</Td>
+          return (<><Td mono>{c.id}</Td><Td>{c.name}</Td><Td>{c.location}</Td><Td>{branchById[c.branch]?.name}</Td><Td>{c.contact}</Td><Td mono>{orders.length}</Td><Td mono>{money(value)}</Td>
             <Td>{isAdmin && <Button variant="ghost" onClick={() => setEditingId(c.id)}>Edit</Button>}</Td></>);
         }} />
     </div>
@@ -2133,8 +2344,8 @@ function QuotationsPage() {
       <Table title="Quotations" columns={["Quote", "Client", "Date", "Items", "Status", ""]} rows={quotations}
         renderRow={(q) => (
           <>
-            <Td mono>{q.id}</Td><Td>{clientById[q.client].name}</Td><Td mono>{q.date}</Td>
-            <Td><div className="text-xs space-y-0.5">{q.items.map((it, i) => <div key={i}>{it.qty} × {prodById[it.id].name}</div>)}</div></Td>
+            <Td mono>{q.id}</Td><Td>{clientById[q.client]?.name}</Td><Td mono>{q.date}</Td>
+            <Td><div className="text-xs space-y-0.5">{q.items.map((it, i) => <div key={i}>{it.qty} × {prodById[it.id]?.name}</div>)}</div></Td>
             <Td><Pill>{q.status}</Pill></Td>
             <Td>
               {canEdit && NEXT[q.status] && <Button onClick={() => advanceQuotation(q.id)}>{NEXT[q.status]}</Button>}
@@ -2153,8 +2364,8 @@ function SalesOrdersPage() {
       <Table title="Sales Orders" columns={["Order", "Client", "Date", "Items", "Total", "Status"]} rows={salesOrders}
         renderRow={(o) => (
           <>
-            <Td mono>{o.id}</Td><Td>{clientById[o.client].name}</Td><Td mono>{o.date}</Td>
-            <Td><div className="text-xs space-y-0.5">{o.items.map((it, i) => <div key={i}>{it.qty} × {prodById[it.id].name}</div>)}</div></Td>
+            <Td mono>{o.id}</Td><Td>{clientById[o.client]?.name}</Td><Td mono>{o.date}</Td>
+            <Td><div className="text-xs space-y-0.5">{o.items.map((it, i) => <div key={i}>{it.qty} × {prodById[it.id]?.name}</div>)}</div></Td>
             <Td mono>{money(orderTotal(o))}</Td><Td><Pill>{o.status}</Pill></Td>
           </>
         )} />
@@ -2169,8 +2380,8 @@ function DeliveryPage() {
       <Table title="Delivery" columns={["Order", "Client", "Branch", "Items", "Status", ""]} rows={salesOrders}
         renderRow={(o) => (
           <>
-            <Td mono>{o.id}</Td><Td>{clientById[o.client].name}</Td><Td>{branchById[o.branch].name}</Td>
-            <Td><div className="text-xs space-y-0.5">{o.items.map((it, i) => <div key={i}>{it.qty} × {prodById[it.id].name}</div>)}</div></Td>
+            <Td mono>{o.id}</Td><Td>{clientById[o.client]?.name}</Td><Td>{branchById[o.branch]?.name}</Td>
+            <Td><div className="text-xs space-y-0.5">{o.items.map((it, i) => <div key={i}>{it.qty} × {prodById[it.id]?.name}</div>)}</div></Td>
             <Td><Pill>{o.status}</Pill></Td>
             <Td>{canEdit && o.status === "Pending" && <Button onClick={() => advanceSalesOrder(o.id)}>Mark Delivered</Button>}</Td>
           </>
@@ -2188,7 +2399,7 @@ function SalesInvoicesPage() {
       <Table title="Invoices" columns={["Invoice", "Client", "Date", "Amount", "Status", ""]} rows={relevant}
         renderRow={(o) => (
           <>
-            <Td mono>{o.id.replace("SO", "INV")}</Td><Td>{clientById[o.client].name}</Td><Td mono>{o.date}</Td>
+            <Td mono>{o.id.replace("SO", "INV")}</Td><Td>{clientById[o.client]?.name}</Td><Td mono>{o.date}</Td>
             <Td mono>{money(orderTotal(o))}</Td><Td><Pill>{o.status}</Pill></Td>
             <Td>{canEdit && NEXT[o.status] && <Button onClick={() => advanceSalesOrder(o.id)}>{NEXT[o.status]}</Button>}</Td>
           </>
@@ -2258,7 +2469,7 @@ function PurchaseRequestsPage() {
       <Table title="Purchase Requests" columns={["PR", "Material", "Qty", "Requested By", "Department", "Date", "Status", ""]} rows={purchaseRequests}
         renderRow={(p) => (
           <>
-            <Td mono>{p.id}</Td><Td>{matById[p.item].name}</Td><Td mono>{p.qty} {matById[p.item].unit}</Td><Td>{p.requestedBy}</Td><Td>{p.department}</Td><Td mono>{p.date}</Td>
+            <Td mono>{p.id}</Td><Td>{matById[p.item]?.name}</Td><Td mono>{p.qty} {matById[p.item]?.unit}</Td><Td>{p.requestedBy}</Td><Td>{p.department}</Td><Td mono>{p.date}</Td>
             <Td><Pill>{p.status}</Pill></Td>
             <Td>
               {canEdit && p.status === "Pending" && <><Button onClick={() => approvePR(p.id, "Approved")}>Approve</Button><Button variant="danger" onClick={() => approvePR(p.id, "Rejected")}>Reject</Button></>}
@@ -2290,14 +2501,14 @@ function PurchaseOrdersPage() {
             </select></div>
           <div><div className="text-[11px] uppercase tracking-wide mb-1" style={{ color: "var(--text-label)" }}>Qty</div>
             <input type="number" value={qty} onChange={(e) => setQty(+e.target.value)} className="text-sm px-2 py-1.5 rounded-sm w-24" style={{ border: "1px solid var(--border-strong)" }} /></div>
-          <Button variant="accent" onClick={() => newPO(supplierId, [{ id: materialId, qty, cost: matById[materialId].cost }])}>+ Create PO</Button>
+          <Button variant="accent" onClick={() => newPO(supplierId, [{ id: materialId, qty, cost: matById[materialId]?.cost }])}>+ Create PO</Button>
         </div>
       )}
       <Table title="Purchase Orders" columns={["PO", "Supplier", "Date", "Items", "Total", "Status", ""]} rows={purchaseOrders}
         renderRow={(po) => (
           <>
-            <Td mono>{po.id}</Td><Td>{supById[po.supplier].name}</Td><Td mono>{po.date}</Td>
-            <Td><div className="text-xs space-y-0.5">{po.items.map((it, i) => <div key={i}>{it.qty} {matById[it.id].unit} · {matById[it.id].name}</div>)}</div></Td>
+            <Td mono>{po.id}</Td><Td>{supById[po.supplier]?.name}</Td><Td mono>{po.date}</Td>
+            <Td><div className="text-xs space-y-0.5">{po.items.map((it, i) => <div key={i}>{it.qty} {matById[it.id]?.unit} · {matById[it.id]?.name}</div>)}</div></Td>
             <Td mono>{money(poTotal(po))}</Td><Td><Pill>{po.status}</Pill></Td>
             <Td>{canEdit && po.status === "Pending" && <Button onClick={() => receivePO(po.id)}>Receive</Button>}</Td>
           </>
@@ -2314,8 +2525,8 @@ function ReceiptsPage() {
       <Table title="Receipts" columns={["Receipt", "PO", "Supplier", "Date", "Items"]} rows={received}
         renderRow={(po) => (
           <>
-            <Td mono>{po.id.replace("PO", "GRN")}</Td><Td mono>{po.id}</Td><Td>{supById[po.supplier].name}</Td><Td mono>{po.date}</Td>
-            <Td><div className="text-xs space-y-0.5">{po.items.map((it, i) => <div key={i}>{it.qty} {matById[it.id].unit} · {matById[it.id].name}</div>)}</div></Td>
+            <Td mono>{po.id.replace("PO", "GRN")}</Td><Td mono>{po.id}</Td><Td>{supById[po.supplier]?.name}</Td><Td mono>{po.date}</Td>
+            <Td><div className="text-xs space-y-0.5">{po.items.map((it, i) => <div key={i}>{it.qty} {matById[it.id]?.unit} · {matById[it.id]?.name}</div>)}</div></Td>
           </>
         )} />
       {received.length === 0 && <div className="text-sm mt-4" style={{ color: "var(--text-secondary)" }}>No goods received yet.</div>}
@@ -2330,7 +2541,7 @@ function PurchaseInvoicesPage() {
       <Table title="Invoices" columns={["Invoice", "PO", "Supplier", "Amount", "Date", "Status", ""]} rows={purchaseInvoices}
         renderRow={(pi) => (
           <>
-            <Td mono>{pi.id}</Td><Td mono>{pi.po}</Td><Td>{supById[pi.supplier].name}</Td><Td mono>{money(pi.amount)}</Td><Td mono>{pi.date}</Td>
+            <Td mono>{pi.id}</Td><Td mono>{pi.po}</Td><Td>{supById[pi.supplier]?.name}</Td><Td mono>{money(pi.amount)}</Td><Td mono>{pi.date}</Td>
             <Td><Pill>{pi.status}</Pill></Td>
             <Td>{canEdit && pi.status === "Unpaid" && <Button onClick={() => payPurchaseInvoice(pi.id)}>Mark Paid</Button>}</Td>
           </>
@@ -2345,6 +2556,7 @@ function PurchaseInvoicesPage() {
 
 function ItemsPage() {
   const { materials, products, totalStock, money } = useApp();
+  const [qrItem, setQrItem] = useState(null);
   const items = [
     ...materials.map((m) => ({ id: m.id, name: m.name, type: "Raw Material", unit: m.unit, stock: m.stock, reorder: m.reorder, value: m.cost })),
     ...products.map((p) => ({ id: p.id, name: p.name, type: "Finished Good", unit: p.unit, stock: totalStock(p), reorder: p.reorder, value: p.price })),
@@ -2352,14 +2564,16 @@ function ItemsPage() {
   return (
     <div>
       <SectionHeader title="Items" sub="Unified catalog of raw materials and finished goods." />
-      <Table title="Items" columns={["ID", "Item", "Type", "Stock", "Reorder At", "Unit Value"]} rows={items}
+      <Table title="Items" columns={["ID", "Item", "Type", "Stock", "Reorder At", "Unit Value", ""]} rows={items}
         renderRow={(it) => (
           <>
             <Td mono>{it.id}</Td><Td>{it.name}</Td><Td><Pill>{it.type}</Pill></Td>
             <Td mono>{it.stock} {it.unit}{it.stock < it.reorder && <span className="ml-2"><Pill>Pending</Pill></span>}</Td>
             <Td mono>{it.reorder} {it.unit}</Td><Td mono>{money(it.value)}</Td>
+            <Td><Button variant="ghost" onClick={() => setQrItem(it)}>Show QR</Button></Td>
           </>
         )} />
+      {qrItem && <QrLabelModal itemId={qrItem.id} itemName={qrItem.name} onClose={() => setQrItem(null)} />}
     </div>
   );
 }
@@ -2392,7 +2606,7 @@ function StockMovePage({ type }) {
         renderRow={(m) => {
           const name = m.itemType === "Material" ? matById[m.item]?.name : prodById[m.item]?.name;
           const unit = m.itemType === "Material" ? matById[m.item]?.unit : prodById[m.item]?.unit;
-          return (<><Td mono>{m.id}</Td><Td>{name}</Td><Td>{m.itemType}</Td><Td mono>{m.qty} {unit}</Td><Td>{branchById[m.warehouse].name}</Td><Td mono>{m.date}</Td><Td mono>{m.ref}</Td></>);
+          return (<><Td mono>{m.id}</Td><Td>{name}</Td><Td>{m.itemType}</Td><Td mono>{m.qty} {unit}</Td><Td>{branchById[m.warehouse]?.name}</Td><Td mono>{m.date}</Td><Td mono>{m.ref}</Td></>);
         }} />
     </div>
   );
@@ -2409,9 +2623,12 @@ function TransfersPage() {
       {canEdit && (
         <div className="p-4 rounded-md mb-5 flex items-end gap-3 flex-wrap" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
           <div><div className="text-[11px] uppercase tracking-wide mb-1" style={{ color: "var(--text-label)" }}>Product</div>
-            <select value={productId} onChange={(e) => setProductId(e.target.value)} className="text-sm px-2 py-1.5 rounded-sm" style={{ border: "1px solid var(--border-strong)" }}>
-              {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select></div>
+            <div className="flex items-center">
+              <select value={productId} onChange={(e) => setProductId(e.target.value)} className="text-sm px-2 py-1.5 rounded-sm" style={{ border: "1px solid var(--border-strong)" }}>
+                {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              <ScanButton validIds={new Set(products.map((p) => p.id))} onValid={setProductId} />
+            </div></div>
           <div><div className="text-[11px] uppercase tracking-wide mb-1" style={{ color: "var(--text-label)" }}>From</div>
             <select value={from} onChange={(e) => setFrom(e.target.value)} className="text-sm px-2 py-1.5 rounded-sm" style={{ border: "1px solid var(--border-strong)" }}>
               {BRANCHES.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -2428,7 +2645,7 @@ function TransfersPage() {
       <Table title="Transfers" columns={["Transfer", "Product", "From", "To", "Qty", "Date"]} rows={transfers}
         renderRow={(t) => {
           const p = products.find((x) => x.id === t.product);
-          return (<><Td mono>{t.id}</Td><Td>{p?.name}</Td><Td>{branchById[t.from].name}</Td><Td>{branchById[t.to].name}</Td><Td mono>{t.qty}</Td><Td mono>{t.date}</Td></>);
+          return (<><Td mono>{t.id}</Td><Td>{p?.name}</Td><Td>{branchById[t.from]?.name}</Td><Td>{branchById[t.to]?.name}</Td><Td mono>{t.qty}</Td><Td mono>{t.date}</Td></>);
         }} />
     </div>
   );
@@ -2448,7 +2665,7 @@ function StockCountPage() {
           const variance = sc.countedQty - sc.systemQty;
           return (
             <>
-              <Td mono>{sc.id}</Td><Td>{branchById[sc.warehouse].name}</Td><Td>{name}</Td><Td mono>{sc.systemQty}</Td><Td mono>{sc.countedQty}</Td>
+              <Td mono>{sc.id}</Td><Td>{branchById[sc.warehouse]?.name}</Td><Td>{name}</Td><Td mono>{sc.systemQty}</Td><Td mono>{sc.countedQty}</Td>
               <Td mono><span style={{ color: variance === 0 ? undefined : variance < 0 ? "#A64B3A" : "#3F7D5C" }}>{variance > 0 ? "+" : ""}{variance}</span></Td>
               <Td mono>{sc.date}</Td><Td><Pill>{sc.status}</Pill></Td>
             </>
@@ -2469,7 +2686,7 @@ function AddItemsPage() {
     <div>
       <SectionHeader title="Add Items" sub="Bring stock into a warehouse directly — new intake, found stock, or corrections." />
       {canEdit && <AddForm
-        fields={[{ key: "itemId", label: "Item", type: "select", options: itemOptions }, { key: "warehouse", label: "Warehouse", type: "select", options: BRANCHES.map((b) => ({ value: b.id, label: b.name })) }, { key: "qty", label: "Qty", type: "number", default: 50 }, { key: "reason", label: "Reason", default: "Manual Add" }]}
+        fields={[{ key: "itemId", label: "Item", type: "select", options: itemOptions, scannable: true }, { key: "warehouse", label: "Warehouse", type: "select", options: BRANCHES.map((b) => ({ value: b.id, label: b.name })) }, { key: "qty", label: "Qty", type: "number", default: 50 }, { key: "reason", label: "Reason", default: "Manual Add" }]}
         onSubmit={addStoreItem} submitLabel="+ Add Stock" />}
       <div className="text-sm" style={{ color: "var(--text-secondary)" }}>Every addition here is logged in Inventory → Stock In with the reason you give it.</div>
     </div>
@@ -2482,7 +2699,7 @@ function OutItemsPage() {
     <div>
       <SectionHeader title="Out Items" sub="Remove stock from a warehouse for reasons outside a normal sale — damage, loss, samples, internal use." />
       {canEdit && <AddForm
-        fields={[{ key: "itemId", label: "Item", type: "select", options: itemOptions }, { key: "warehouse", label: "Warehouse", type: "select", options: BRANCHES.map((b) => ({ value: b.id, label: b.name })) }, { key: "qty", label: "Qty", type: "number", default: 10 }, { key: "reason", label: "Reason", type: "select", options: ["Damaged", "Lost", "Sample", "Internal Use", "Other"] }]}
+        fields={[{ key: "itemId", label: "Item", type: "select", options: itemOptions, scannable: true }, { key: "warehouse", label: "Warehouse", type: "select", options: BRANCHES.map((b) => ({ value: b.id, label: b.name })) }, { key: "qty", label: "Qty", type: "number", default: 10 }, { key: "reason", label: "Reason", type: "select", options: ["Damaged", "Lost", "Sample", "Internal Use", "Other"] }]}
         onSubmit={removeStoreItem} submitLabel="− Remove Stock" />}
       <div className="text-sm" style={{ color: "var(--text-secondary)" }}>Every removal here is logged in Inventory → Stock Out with the reason you give it.</div>
     </div>
@@ -2493,8 +2710,8 @@ function ItemLimitsPage() {
   const itemOptions = [...materials.map((m) => ({ value: m.id, label: m.name })), ...products.map((p) => ({ value: p.id, label: p.name }))];
   const [editingId, setEditingId] = useState(null);
   function currentStock(itemId, warehouse) {
-    if (itemId.startsWith("RM")) return warehouse === "BR-HQ" ? matById[itemId].stock : 0;
-    return prodById[itemId].stockByBranch[warehouse];
+    if (itemId.startsWith("RM")) return warehouse === "BR-HQ" ? matById[itemId]?.stock : 0;
+    return prodById[itemId]?.stockByBranch[warehouse];
   }
   const fields = [{ key: "item", label: "Item", type: "select", options: itemOptions }, { key: "warehouse", label: "Warehouse", type: "select", options: BRANCHES.map((b) => ({ value: b.id, label: b.name })) }, { key: "min", label: "Min", type: "number", default: 50 }, { key: "max", label: "Max", type: "number", default: 500 }];
   const editingRow = itemLimits.find((l) => l.id === editingId);
@@ -2510,7 +2727,7 @@ function ItemLimitsPage() {
           const name = l.item.startsWith("RM") ? matById[l.item]?.name : prodById[l.item]?.name;
           const stock = currentStock(l.item, l.warehouse);
           const status = stock < l.min ? "Below Min" : stock > l.max ? "Above Max" : "Within Range";
-          return (<><Td mono>{l.id}</Td><Td>{name}</Td><Td>{branchById[l.warehouse].name}</Td><Td mono>{stock}</Td><Td mono>{l.min}</Td><Td mono>{l.max}</Td><Td><Pill>{status}</Pill></Td>
+          return (<><Td mono>{l.id}</Td><Td>{name}</Td><Td>{branchById[l.warehouse]?.name}</Td><Td mono>{stock}</Td><Td mono>{l.min}</Td><Td mono>{l.max}</Td><Td><Pill>{status}</Pill></Td>
             <Td>{isAdmin && <Button variant="ghost" onClick={() => setEditingId(l.id)}>Edit</Button>}{canEdit && <Button variant="danger" onClick={() => deleteItemLimit(l.id)}>Delete</Button>}</Td></>);
         }} />
       {itemLimits.length === 0 && <div className="text-sm mt-3" style={{ color: "var(--text-secondary)" }}>No limits set yet.</div>}
@@ -2553,8 +2770,8 @@ function JournalPage() {
 function CashPage() {
   const { salesOrders, purchaseInvoices, expenses, clientById, supById, orderTotal, money } = useApp();
   const entries = [
-    ...salesOrders.filter((o) => o.status === "Paid").map((o) => ({ date: o.date, desc: `Receipt — ${clientById[o.client].name} (${o.id})`, inflow: orderTotal(o), outflow: 0 })),
-    ...purchaseInvoices.filter((p) => p.status === "Paid").map((p) => ({ date: p.date, desc: `Payment — ${supById[p.supplier].name} (${p.po})`, inflow: 0, outflow: p.amount })),
+    ...salesOrders.filter((o) => o.status === "Paid").map((o) => ({ date: o.date, desc: `Receipt — ${clientById[o.client]?.name} (${o.id})`, inflow: orderTotal(o), outflow: 0 })),
+    ...purchaseInvoices.filter((p) => p.status === "Paid").map((p) => ({ date: p.date, desc: `Payment — ${supById[p.supplier]?.name} (${p.po})`, inflow: 0, outflow: p.amount })),
     ...expenses.filter((e) => e.status === "Paid").map((e) => ({ date: e.date, desc: `Expense — ${e.category} (${e.employee})`, inflow: 0, outflow: e.amount })),
   ].sort((a, b) => a.date.localeCompare(b.date));
   let bal = 15000;
@@ -2591,7 +2808,7 @@ function ArReceiptsPage() {
   const { salesOrders, clientById, orderTotal, money, customers, manualReceipts, addManualReceipt, updateManualReceipt, deleteManualReceipt, canEdit, isAdmin } = useApp();
   const [editingId, setEditingId] = useState(null);
   const fromOrders = salesOrders.filter((o) => o.status === "Paid").map((o) => ({
-    id: o.id.replace("SO", "RCP"), party: clientById[o.client].name, date: o.date, amount: orderTotal(o), source: "Sales Order",
+    id: o.id.replace("SO", "RCP"), party: clientById[o.client]?.name, date: o.date, amount: orderTotal(o), source: "Sales Order",
   }));
   const manual = manualReceipts.map((r) => ({ id: r.id, party: clientById[r.client]?.name || r.client, date: r.date, amount: r.amount, source: "Manual" }));
   const rows = [...fromOrders, ...manual];
@@ -2617,7 +2834,7 @@ function ApPaymentsPage() {
   const { purchaseInvoices, expenses, supById, money, suppliers, manualPayments, addManualPayment, updateManualPayment, deleteManualPayment, canEdit, isAdmin } = useApp();
   const [editingId, setEditingId] = useState(null);
   const rows = [
-    ...purchaseInvoices.filter((p) => p.status === "Paid").map((p) => ({ id: p.id, payee: supById[p.supplier].name, date: p.date, amount: p.amount, type: "Supplier" })),
+    ...purchaseInvoices.filter((p) => p.status === "Paid").map((p) => ({ id: p.id, payee: supById[p.supplier]?.name, date: p.date, amount: p.amount, type: "Supplier" })),
     ...expenses.filter((e) => e.status === "Paid").map((e) => ({ id: e.id, payee: e.employee, date: e.date, amount: e.amount, type: "Expense" })),
     ...manualPayments.map((p) => ({ id: p.id, payee: p.payee, date: p.date, amount: p.amount, type: "Manual" })),
   ];
@@ -2727,7 +2944,7 @@ function EmployeesPage() {
           onSubmit={(vals) => { updateEmployee(editingId, vals); setEditingId(null); }} submitLabel="Save Changes" />
       )}
       <Table title="Employees" columns={["ID", "Name", "Role", "Department", "Branch", "Email", "Hired", "Status", ""]} rows={employees}
-        renderRow={(e) => (<><Td mono>{e.id}</Td><Td>{e.name}</Td><Td>{e.role}</Td><Td>{e.department}</Td><Td>{branchById[e.branch].name}</Td><Td>{e.email}</Td><Td mono>{e.hired}</Td><Td><Pill>{e.status}</Pill></Td>
+        renderRow={(e) => (<><Td mono>{e.id}</Td><Td>{e.name}</Td><Td>{e.role}</Td><Td>{e.department}</Td><Td>{branchById[e.branch]?.name}</Td><Td>{e.email}</Td><Td mono>{e.hired}</Td><Td><Pill>{e.status}</Pill></Td>
           <Td>{isAdmin && <Button variant="ghost" onClick={() => setEditingId(e.id)}>Edit</Button>}</Td></>)} />
     </div>
   );
@@ -2886,7 +3103,7 @@ function ManufacturingPage() {
               <Td mono>{b.id}</Td><Td>{product.name}</Td><Td mono>{b.qty} {product.unit}</Td><Td mono>{b.date}</Td>
               <Td><Pill>{b.status}</Pill></Td>
               <Td><div className="text-xs space-y-0.5">{product.bom.map((line) => (
-                <div key={line.id} style={{ color: matById[line.id].stock >= line.qty * b.qty ? "var(--text-secondary)" : "#A64B3A" }}>{matById[line.id].name}: {(line.qty * b.qty).toFixed(1)} {matById[line.id].unit}</div>
+                <div key={line.id} style={{ color: matById[line.id]?.stock >= line.qty * b.qty ? "var(--text-secondary)" : "#A64B3A" }}>{matById[line.id]?.name}: {(line.qty * b.qty).toFixed(1)} {matById[line.id]?.unit}</div>
               ))}</div></Td>
               <Td>{canEdit && b.status === "Planned" && <Button onClick={() => completeBatch(b.id)} disabled={!ok}>{ok ? "Complete" : "Short stock"}</Button>}</Td>
             </>
@@ -3098,7 +3315,7 @@ function ReportsPage() {
 function ApprovalsPage() {
   const { purchaseRequests, leaves, expenses, matById, approvePR, setLeaveStatus, setExpenseStatus, money, canEdit } = useApp();
   const items = [
-    ...purchaseRequests.filter((p) => p.status === "Pending").map((p) => ({ type: "Purchase Request", id: p.id, detail: `${p.qty} × ${matById[p.item].name}`, requester: p.requestedBy, date: p.date, approve: () => approvePR(p.id, "Approved"), reject: () => approvePR(p.id, "Rejected") })),
+    ...purchaseRequests.filter((p) => p.status === "Pending").map((p) => ({ type: "Purchase Request", id: p.id, detail: `${p.qty} × ${matById[p.item]?.name}`, requester: p.requestedBy, date: p.date, approve: () => approvePR(p.id, "Approved"), reject: () => approvePR(p.id, "Rejected") })),
     ...leaves.filter((l) => l.status === "Pending").map((l) => ({ type: "Leave Request", id: l.id, detail: `${l.type} leave, ${l.from} to ${l.to}`, requester: l.employee, date: l.from, approve: () => setLeaveStatus(l.id, "Approved"), reject: () => setLeaveStatus(l.id, "Rejected") })),
     ...expenses.filter((e) => e.status === "Pending").map((e) => ({ type: "Expense Claim", id: e.id, detail: `${e.category} — ${money(e.amount)}`, requester: e.employee, date: e.date, approve: () => setExpenseStatus(e.id, "Approved"), reject: () => setExpenseStatus(e.id, "Rejected") })),
   ];
